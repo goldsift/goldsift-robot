@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__promptx__promptx_init",
+      "mcp__promptx__promptx_welcome",
+      "mcp__promptx__promptx_action",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "WebSearch",
+      "WebFetch(domain:ai.google.dev)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
