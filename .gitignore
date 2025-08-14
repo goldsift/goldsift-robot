@@ -42,3 +42,8 @@ coverage/
 *.pid
 *.seed
 *.pid.lock
+
+.claude/
+.promptx/
+logs/
+CLAUDE.md
