@@ -6,6 +6,39 @@
 import { logger } from './logger.js';
 import { config, isDevelopment } from './config.js';
 import { startBot, stopBot } from './bot.js';
+import { createServer } from 'http';
+
+// 全局变量存储HTTP服务器实例
+let httpServer: any = null;
+
+/**
+ * 启动健康检查HTTP服务器
+ */
+function startHealthServer(): Promise<void> {
+  return new Promise((resolve) => {
+    httpServer = createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ 
+          status: 'healthy', 
+          timestamp: new Date().toISOString(),
+          service: 'crypto-trading-bot'
+        }));
+      } else {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not Found' }));
+      }
+    });
+
+    httpServer.listen(config.port, () => {
+      logger.info(`🌐 健康检查服务器启动`, {
+        port: config.port,
+        healthEndpoint: `/health`
+      });
+      resolve();
+    });
+  });
+}
 
 /**
  * 应用程序启动函数
@@ -17,6 +50,9 @@ async function startApplication(): Promise<void> {
       port: config.port,
       isDevelopment
     });
+
+    // 启动健康检查服务器
+    await startHealthServer();
 
     // 启动 Telegram Bot
     await startBot();
@@ -54,6 +90,16 @@ async function shutdownApplication(signal: string): Promise<void> {
   try {
     // 停止 Telegram Bot
     await stopBot();
+    
+    // 关闭HTTP服务器
+    if (httpServer) {
+      await new Promise<void>((resolve) => {
+        httpServer.close(() => {
+          logger.info('🌐 健康检查服务器已关闭');
+          resolve();
+        });
+      });
+    }
     
     logger.info('✅ 应用程序已安全关闭');
     process.exit(0);

@@ -101,6 +101,25 @@ npm start
 
 ### Docker部署
 
+#### 方式一：使用 Docker Compose（推荐）
+
+```bash
+# 复制环境变量文件
+cp .env.example .env
+# 编辑 .env 文件，配置必要的环境变量
+
+# 启动服务
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+#### 方式二：直接使用 Docker
+
 ```bash
 # 构建镜像
 docker build -t crypto-bot .
@@ -110,8 +129,23 @@ docker run -d \
   --name crypto-bot \
   --env-file .env \
   -p 3000:3000 \
+  -v $(pwd)/logs:/app/logs \
   crypto-bot
+
+# 查看日志
+docker logs -f crypto-bot
+
+# 停止容器
+docker stop crypto-bot && docker rm crypto-bot
 ```
+
+#### Docker 特性
+
+- **基于 Node.js v18.20.4**: 使用官方 Alpine 镜像，体积小巧
+- **健康检查**: 内置健康检查端点 `/health`
+- **优雅关闭**: 支持 SIGTERM 信号处理
+- **日志持久化**: 日志文件挂载到宿主机
+- **非 root 用户**: 容器内使用非特权用户运行
 
 ## 使用说明
 
