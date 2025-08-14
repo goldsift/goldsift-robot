@@ -56,6 +56,10 @@ export interface KlineData {
   volume: string;
   /** 收盘时间（UTC ISO字符串格式） */
   closeTime: string;
+  /** 格式化的开盘时间（本地时区） */
+  openTimeFormatted?: string;
+  /** 格式化的收盘时间（本地时区） */
+  closeTimeFormatted?: string;
 }
 
 // 多时间框架K线数据
@@ -100,6 +104,30 @@ export interface Config {
   logLevel: LogLevel;
   /** 时区配置，格式如 'Asia/Shanghai', 'America/New_York' 等 */
   timezone: string;
+  /** 全局最大并发分析数量 */
+  maxConcurrentAnalysis: number;
+  /** 是否启用新成员欢迎消息 */
+  enableNewMemberWelcome: boolean;
+}
+
+// 并发控制相关类型
+export interface ConcurrencyManager {
+  /** 当前全局并发数 */
+  globalCount: number;
+  /** 每个群的并发状态 */
+  groupAnalysis: Map<number, boolean>;
+  /** 检查是否可以开始新的分析 */
+  canStartAnalysis(chatId: number): boolean;
+  /** 开始分析（增加计数） */
+  startAnalysis(chatId: number): void;
+  /** 完成分析（减少计数） */
+  finishAnalysis(chatId: number): void;
+  /** 获取当前状态信息 */
+  getStatus(): {
+    globalCount: number;
+    maxConcurrent: number;
+    activeGroups: number[];
+  };
 }
 
 // API错误类型

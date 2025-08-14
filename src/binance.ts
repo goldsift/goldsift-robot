@@ -7,6 +7,7 @@ import axios from 'axios';
 import { logger } from './logger.js';
 import type { TimeframeKlineData, TimeframeType, KlineData } from './types.js';
 import { TradingAnalysisError } from './types.js';
+import { formatTimestampCompact } from './timezone.js';
 
 // 币安公开API基础URL
 const BINANCE_API_BASE = 'https://api.binance.com/api/v3';
@@ -24,19 +25,28 @@ const TIMEFRAMES = [
 ] as const;
 
 /**
- * 转换币安原始K线数据格式
+ * 转换币安原始K线数据格式并应用时区转换
  * 币安API返回格式：[开盘时间, 开盘价, 最高价, 最低价, 收盘价, 成交量, 收盘时间, ...]
  */
 function transformKlineData(rawData: any[]): KlineData[] {
-  return rawData.map(item => ({
-    openTime: new Date(parseInt(item[0])).toISOString(),
-    open: item[1],
-    high: item[2],
-    low: item[3],
-    close: item[4],
-    volume: item[5],
-    closeTime: new Date(parseInt(item[6])).toISOString()
-  }));
+  return rawData.map(item => {
+    const openTimeMs = parseInt(item[0]);
+    const closeTimeMs = parseInt(item[6]);
+    
+    return {
+      // 保存原始UTC时间戳用于计算，同时提供格式化的本地时间
+      openTime: new Date(openTimeMs).toISOString(),
+      open: item[1],
+      high: item[2],
+      low: item[3],
+      close: item[4],
+      volume: item[5],
+      closeTime: new Date(closeTimeMs).toISOString(),
+      // 添加紧凑格式的本地时间字段 (YY/MM/DD hh:mm)
+      openTimeFormatted: formatTimestampCompact(openTimeMs),
+      closeTimeFormatted: formatTimestampCompact(closeTimeMs)
+    };
+  });
 }
 
 /**
@@ -192,6 +202,40 @@ export async function getKlineData(
 }
 
 /**
- * 导出交易对验证函数（可选使用）
+ * 获取所有币安交易对信息
  */
-export { validateSymbol };
+async function getAllTradingPairs(): Promise<string[]> {
+  try {
+    logger.debug('获取所有交易对信息');
+    
+    const response = await axios.get(`${BINANCE_API_BASE}/exchangeInfo`, {
+      timeout: 10000
+    });
+
+    const symbols = response.data.symbols
+      .filter((symbol: any) => symbol.status === 'TRADING') // 只获取正在交易的
+      .map((symbol: any) => symbol.symbol);
+
+    logger.debug('交易对信息获取成功', { 
+      totalSymbols: symbols.length 
+    });
+    
+    return symbols;
+    
+  } catch (error) {
+    logger.error('获取交易对信息失败', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    
+    throw new TradingAnalysisError(
+      '获取交易对信息失败',
+      'BINANCE_API_ERROR',
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+  }
+}
+
+/**
+ * 导出函数
+ */
+export { validateSymbol, getAllTradingPairs };

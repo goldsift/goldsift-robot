@@ -8,6 +8,51 @@ import { logger } from './logger.js';
 import type { MessageAnalysisResult } from './types.js';
 import { TradingAnalysisError } from './types.js';
 import { createChatCompletion, type AIMessage } from './ai-client.js';
+import { getAllTradingPairs } from './binance.js';
+
+/**
+ * 构建包含交易对上下文的二次识别提示词
+ */
+function buildAnalysisPromptWithContext(message: string, tradingPairs: string[]): string {
+  // 将交易对按USDT结尾的优先排序，然后分组显示
+  const usdtPairs = tradingPairs.filter(pair => pair.endsWith('USDT')).sort();
+  const otherPairs = tradingPairs.filter(pair => !pair.endsWith('USDT')).sort();
+  
+  // 为了减少token，只显示前1000个USDT交易对和前500个其他交易对
+  const displayPairs = [
+    ...usdtPairs.slice(0, 1000),
+    ...otherPairs.slice(0, 500)
+  ];
+  
+  return `请分析用户消息，判断是否为加密货币交易分析请求，如果是则从币安交易对列表中找到最匹配的。
+
+用户消息: "${message}"
+
+币安交易对列表（优先显示USDT交易对）:
+${displayPairs.join(', ')}
+
+请严格按照以下JSON格式返回，不要包含任何其他文字、解释或markdown格式:
+{
+  "isTradeAnalysis": true,
+  "tradingPair": "BTCUSDT"
+}
+
+识别规则：
+1. 如果用户询问任何加密货币的价格、走势、分析、技术指标等，返回 isTradeAnalysis: true
+2. 从交易对列表中找到最匹配用户意图的交易对
+3. 优先选择USDT结尾的交易对（如BTCUSDT、ETHUSDT等）
+4. 支持中文币种名称（比特币→BTC、以太坊→ETH等）
+5. 支持模糊匹配（MATIC、Polygon→MATICUSDT）
+6. 如果找不到匹配的交易对，tradingPair 设为 null
+7. 如果不是交易分析请求，返回 isTradeAnalysis: false, tradingPair: null
+
+示例：
+"分析XRP" → {"isTradeAnalysis": true, "tradingPair": "XRPUSDT"}
+"MATIC走势" → {"isTradeAnalysis": true, "tradingPair": "MATICUSDT"}
+"比特币分析" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT"}`;
+}
+
+
 
 /**
  * 构建意图识别提示词
@@ -176,8 +221,49 @@ function validateTradingPair(pair: string | null): string | null {
 }
 
 /**
+ * 二次分析用户消息（使用交易对上下文）
+ */
+async function analyzeMessageWithContext(message: string, tradingPairs: string[]): Promise<MessageAnalysisResult> {
+  try {
+    logger.info('开始二次分析用户消息', { tradingPairsCount: tradingPairs.length });
+    
+    // 构建包含交易对上下文的提示词
+    const prompt = buildAnalysisPromptWithContext(message, tradingPairs);
+    
+    // 调用 AI 进行二次分析
+    const aiResponse = await callAIAPI(prompt);
+    
+    // 解析 AI 响应
+    const result = parseAIResponse(aiResponse);
+    
+    // 验证交易对格式
+    result.tradingPair = validateTradingPair(result.tradingPair);
+    
+    logger.info('二次分析完成', {
+      isTradeAnalysis: result.isTradeAnalysis,
+      tradingPair: result.tradingPair,
+      confidence: result.confidence
+    });
+    
+    return result;
+    
+  } catch (error) {
+    logger.error('二次分析失败', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    
+    // 二次分析失败时返回原始结果
+    return {
+      isTradeAnalysis: true, // 假设是交易分析请求
+      tradingPair: null,
+      confidence: 0.1
+    };
+  }
+}
+
+/**
  * 分析用户消息
- * 主要导出函数
+ * 主要导出函数 - 实现两步识别机制
  */
 export async function analyzeMessage(message: string): Promise<MessageAnalysisResult> {
   if (!message || message.trim().length === 0) {
@@ -191,23 +277,45 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
   try {
     logger.info('开始分析用户消息');
     
-    // 构建分析提示词
+    // 第一步：常规意图识别
     const prompt = buildAnalysisPrompt(message);
-    
-    // 调用 AI 进行分析
     const aiResponse = await callAIAPI(prompt);
-    
-    // 解析 AI 响应
     const result = parseAIResponse(aiResponse);
-    
-    // 验证交易对格式
     result.tradingPair = validateTradingPair(result.tradingPair);
     
-    logger.info('消息分析完成', {
+    logger.info('第一步分析完成', {
       isTradeAnalysis: result.isTradeAnalysis,
       tradingPair: result.tradingPair,
       confidence: result.confidence
     });
+    
+    // 检查是否需要二次识别
+    if (result.isTradeAnalysis && result.tradingPair === null) {
+      logger.info('第一步识别到交易分析请求但无法识别交易对，开始二次识别');
+      
+      try {
+        // 获取所有交易对
+        const tradingPairs = await getAllTradingPairs();
+        
+        // 第二步：使用交易对上下文进行二次识别
+        const secondResult = await analyzeMessageWithContext(message, tradingPairs);
+        
+        if (secondResult.tradingPair) {
+          logger.info('二次识别成功', {
+            tradingPair: secondResult.tradingPair,
+            confidence: secondResult.confidence
+          });
+          return secondResult;
+        } else {
+          logger.info('二次识别仍未找到匹配的交易对');
+        }
+        
+      } catch (error) {
+        logger.error('二次识别过程失败', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
     
     return result;
     

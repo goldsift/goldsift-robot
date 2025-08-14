@@ -43,6 +43,17 @@ function validatePort(portStr: string): number {
 }
 
 /**
+ * 验证最大并发数
+ */
+function validateMaxConcurrency(concurrencyStr: string): number {
+  const concurrency = parseInt(concurrencyStr, 10);
+  if (isNaN(concurrency) || concurrency < 1 || concurrency > 100) {
+    throw new Error(`无效的最大并发数: ${concurrencyStr}，应在1-100之间`);
+  }
+  return concurrency;
+}
+
+/**
  * 验证时区格式
  */
 function validateTimezone(timezone: string): string {
@@ -95,7 +106,13 @@ function createConfig(): Config {
       logLevel: validateLogLevel(process.env.LOG_LEVEL || 'info'),
       
       // 时区配置
-      timezone: validateTimezone(process.env.TIMEZONE || 'Asia/Shanghai')
+      timezone: validateTimezone(process.env.TIMEZONE || 'Asia/Shanghai'),
+      
+      // 并发控制配置
+      maxConcurrentAnalysis: validateMaxConcurrency(process.env.MAX_CONCURRENT_ANALYSIS || '10'),
+      
+      // 新成员欢迎配置
+      enableNewMemberWelcome: process.env.ENABLE_NEW_MEMBER_WELCOME !== 'false'
     };
   } catch (error) {
     console.error('配置验证失败:', error);

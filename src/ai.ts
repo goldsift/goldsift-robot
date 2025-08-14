@@ -8,6 +8,7 @@ import { logger } from './logger.js';
 import type { TimeframeKlineData } from './types.js';
 import { TradingAnalysisError } from './types.js';
 import { createChatCompletion, createStreamingChatCompletion, type AIMessage } from './ai-client.js';
+import { getCurrentTime } from './timezone.js';
 
 /**
  * 构建交易分析提示词
@@ -17,17 +18,18 @@ function buildAnalysisPrompt(
   symbol: string,
   klineData: TimeframeKlineData
 ): string {
-  // 构建完整的K线数据，保留所有必要信息供技术分析
+  // 构建完整的K线数据，使用格式化后的时间
   const fullKlineData = Object.entries(klineData).map(([timeframe, data]) => {
-    // 保留完整的K线数据，但格式化为更紧凑的形式
+    // 使用格式化后的时间数据
     const formattedData = data.map((kline: any) => ({
-      closeTime: new Date(kline.closeTime).toISOString(),
-      open: parseFloat(kline.open),
-      high: parseFloat(kline.high),
-      low: parseFloat(kline.low),
-      close: parseFloat(kline.close),
-      volume: parseFloat(kline.volume),
-      openTime: new Date(kline.openTime).toISOString()
+      // 使用已经格式化好的本地时间
+      openTime: kline.openTimeFormatted || kline.openTime,
+      closeTime: kline.closeTimeFormatted || kline.closeTime,
+      open: kline.open,
+      high: kline.high,
+      low: kline.low,
+      close: kline.close,
+      volume: kline.volume
     }));
 
     // 添加一些基础统计信息
@@ -61,16 +63,13 @@ function buildAnalysisPrompt(
 - **波浪理论**: 推动浪调整浪、斐波那契回撤扩展
 - **传统技术分析**: K线形态、均线系统、量价关系、RSI/MACD等指标
 
-**当前分析时间**: ${new Date().toISOString()} (UTC时间，请在分析中转换为${config.timezone}时区显示，格式为：YY-MM-DD HH:mm)
+请回答用户问题:** ${question} **
 
-请基于提供的多时间框架完整K线数据，对 ${symbol} 进行专业分析。目的是回答用户问题:** ${question} **
-
-完整K线数据（包含15分钟到月线的不同时间框架的K线，每个时间框架最多包含最近100条K线，因为K线总量有限，所以不一定能包含该交易对的完整价格走向，特别是时间间隔小的K线，需要注意）:
-${JSON.stringify(fullKlineData, null, 2)}
+分析过程中，涉及到对交易对 ${symbol} 进行的分析，需要基于提供的多时间框架完整K线数据，灵活运用相应的分析理论，提供专业、准确、实用的市场分析和交易建议。
 
 **重要提示**：
 - 每个时间框架都提供了完整的K线序列，请充分利用这些数据进行技术分析
-- **时间显示要求**：所有K线数据的时间均为UTC格式，在分析中引用具体时间时，请转换为${config.timezone}时区并以"YY-MM-DD HH:mm"格式显示，例如"25-08-14 10:30"
+- **时间格式说明**：所有K线数据的时间已经转换为${config.timezone}时区，可以直接引用
 - **时间概念很重要**：K线数据包含具体的开盘和收盘时间，请根据时间距离当前的远近来判断：
   * **近期/短期**: 15分钟图几小时内，1小时图1-2天内，4小时图1周内
   * **中期**: 日线图1-3个月，周线图3-6个月
@@ -82,9 +81,16 @@ ${JSON.stringify(fullKlineData, null, 2)}
 - 请结合多个时间框架进行综合判断
 
 
-
 **重要：请按以下格式分段输出分析，每完成一段后添加标记，可以对回复段落进行裁剪和增加，关键是要回答用户的问题**
+1. **{段落名称}**（150-200字）
+[SEGMENT_COMPLETE]
 
+2. **{段落名称}**（150-200字）
+[SEGMENT_COMPLETE]
+...
+
+
+举个例子，可以回复成这样：
 1. **市场概况与趋势分析**（150-200字，包含当前价格、主要趋势方向）
 [SEGMENT_COMPLETE]
 
@@ -104,9 +110,15 @@ ${JSON.stringify(fullKlineData, null, 2)}
 - 回复不需要告诉客户你是什么人，直接给分析结果即可
 - 关注用户的问题，回答简洁明了，避免冗长描述
 - 必须包含具体的价格数据和K线开盘时间或者收盘时间引用
-- **时间引用格式**：引用具体K线时间时，必须转换为${config.timezone}时区，格式为"YY-MM-DD HH:mm"，如"25-08-14 10:30"
+- **时间引用**：K线中openTime为开盘时间，closeTime为收盘时间，说明K线时间的时候需要明确是开盘时间还是收盘时间
 - 严格按照上述格式输出，包含所有标记
 - 可以运用不同的markdown样式对结果进行美化，关键文字可以使用不同颜色进行标记，可以适当增加一些小图标
+
+**当前分析时间**: ${getCurrentTime()}
+
+**完整K线数据**（包含15分钟到月线的不同时间框架的K线，每个时间框架最多包含最近100条K线，因为K线总量有限，所以不一定能包含该交易对的完整价格走向，特别是时间间隔小的K线，需要注意）:
+${JSON.stringify(fullKlineData, null, 2)}
+
 `;
 }
 

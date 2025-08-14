@@ -14,9 +14,13 @@ import { analyzeMessage } from './analyzer.js';
 import { getKlineData } from './binance.js';
 import { analyzeStreamingTrading } from './ai.js';
 import { TradingAnalysisError, TelegramMessage } from './types.js';
+import { concurrencyManager } from './concurrency.js';
 
 // 创建 Telegram Bot 实例
 const bot = new TelegramBot(config.telegramBotToken, { polling: true });
+
+// 机器人信息缓存
+let botInfo: any = null;
 
 /**
  * 发送安全的消息（处理长消息）
@@ -155,6 +159,90 @@ async function sendWelcomeMessage(chatId: number): Promise<void> {
 }
 
 /**
+ * 检查消息是否是对机器人的回复或@提及
+ */
+function isMessageForBot(msg: TelegramMessage): boolean {
+  const text = msg.text || '';
+  const chatType = msg.chat.type;
+  const chatId = msg.chat.id;
+  
+  logger.info('检查消息是否给机器人', {
+    chatId,
+    chatType,
+    textPreview: text.substring(0, 100),
+    botInfoExists: !!botInfo,
+    botUsername: botInfo?.username,
+    botId: botInfo?.id,
+    hasReplyToMessage: !!msg.reply_to_message,
+    replyToMessageFromId: msg.reply_to_message?.from?.id
+  });
+  
+  // 私聊消息总是处理
+  if (chatType === 'private') {
+    logger.info('私聊消息，直接处理', { chatId });
+    return true;
+  }
+  
+  // 群聊消息需要检查是否@了机器人
+  if (chatType === 'group' || chatType === 'supergroup') {
+    // 检查botInfo是否正确获取
+    if (!botInfo || !botInfo.username) {
+      logger.error('botInfo未正确获取', {
+        chatId,
+        botInfo: botInfo ? { id: botInfo.id, username: botInfo.username } : null
+      });
+      return false;
+    }
+    
+    // 检查是否@了机器人（使用用户名）
+    const botMention = `@${botInfo.username}`;
+    if (text.includes(botMention)) {
+      logger.info('检测到@机器人', {
+        chatId,
+        botMention,
+        textContainsMention: true
+      });
+      return true;
+    }
+    
+    // 检查是否是回复机器人的消息
+    if (msg.reply_to_message && msg.reply_to_message.from) {
+      const isReplyToBot = msg.reply_to_message.from.id === botInfo.id;
+      logger.info('检查回复消息', {
+        chatId,
+        replyToMessageFromId: msg.reply_to_message.from.id,
+        botId: botInfo.id,
+        isReplyToBot
+      });
+      return isReplyToBot;
+    }
+    
+    logger.info('群聊消息未@机器人且非回复', {
+      chatId,
+      botMention,
+      textIncludes: text.includes(botMention),
+      hasReply: !!msg.reply_to_message
+    });
+    return false;
+  }
+  
+  logger.info('未知聊天类型', { chatId, chatType });
+  return false;
+}
+
+/**
+ * 清理消息文本（移除@机器人的部分）
+ */
+function cleanMessageText(text: string): string {
+  if (!botInfo || !botInfo.username) {
+    return text;
+  }
+  
+  const botMention = `@${botInfo.username}`;
+  return text.replace(new RegExp(botMention, 'gi'), '').trim();
+}
+
+/**
  * 处理分析错误
  */
 async function handleAnalysisError(
@@ -171,6 +259,9 @@ async function handleAnalysisError(
         break;
       case 'RATE_LIMIT':
         errorMessage = '⏰ 请求过于频繁，请稍等片刻再试。';
+        break;
+      case 'CONCURRENCY_LIMIT':
+        errorMessage = '🚦 当前分析请求过多，请稍后再试。（单群限制：一次一个分析，全局限制：最多' + config.maxConcurrentAnalysis + '个并发分析）';
         break;
       case 'OPENAI_ERROR_401':
         errorMessage = '❌ AI服务认证失败，请联系管理员。';
@@ -196,20 +287,60 @@ async function handleAnalysisError(
  */
 async function handleTextMessage(msg: TelegramMessage): Promise<void> {
   const chatId = msg.chat.id;
-  const messageText = msg.text;
+  const originalText = msg.text;
 
-  if (!messageText) {
+  if (!originalText) {
     await sendSafeMessage(chatId, '❌ 请发送文本消息。');
+    return;
+  }
+  
+  // 检查消息是否是给机器人的
+  if (!isMessageForBot(msg)) {
+    logger.debug('忽略非机器人消息', {
+      chatId,
+      chatType: msg.chat.type,
+      text: originalText.substring(0, 100)
+    });
+    return;
+  }
+  
+  // 清理消息文本
+  const messageText = cleanMessageText(originalText);
+  
+  if (!messageText.trim()) {
+    await sendSafeMessage(chatId, '❌ 请发送有效的文本消息。');
     return;
   }
 
   logger.info('收到用户消息', {
     chatId,
+    chatType: msg.chat.type,
     userId: msg.from?.id,
     username: msg.from?.username,
-    messageLength: messageText.length
+    messageLength: messageText.length,
+    isGroupMessage: msg.chat.type !== 'private'
   });
 
+  // 检查并发限制
+  if (!concurrencyManager.canStartAnalysis(chatId)) {
+    const status = concurrencyManager.getStatus();
+    logger.warn('分析请求被拒绝 - 并发限制', {
+      chatId,
+      globalCount: status.globalCount,
+      maxConcurrent: status.maxConcurrent,
+      isGroupBusy: concurrencyManager.groupAnalysis.get(chatId) === true
+    });
+    
+    await handleAnalysisError(chatId, new TradingAnalysisError(
+      '当前分析请求过多，请稍后再试',
+      'CONCURRENCY_LIMIT'
+    ), '并发控制');
+    return;
+  }
+  
+  // 开始分析（增加并发计数）
+  concurrencyManager.startAnalysis(chatId);
+  
   try {
     // 发送处理中消息
     await bot.sendChatAction(chatId, 'typing');
@@ -242,7 +373,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
 
     // 更新状态消息
     if (statusMessage) {
-      await editSafeMessage(chatId, statusMessage.message_id, `🤖 AI正在分析 *${parseResult.tradingPair}*，请稍候...\n\n_实时分析中，内容将动态更新_ ⏳`);
+      await editSafeMessage(chatId, statusMessage.message_id, `🤖 AI正在分析，请稍候...\n\n_实时分析中，内容将动态更新_ ⏳`);
     }
 
     // 3. 流式AI分析
@@ -292,6 +423,9 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
 
   } catch (error) {
     await handleAnalysisError(chatId, error, '消息');
+  } finally {
+    // 完成分析（减少并发计数）
+    concurrencyManager.finishAnalysis(chatId);
   }
 }
 
@@ -311,12 +445,120 @@ function initializeBotHandlers(): void {
 
   // 处理所有文本消息
   bot.on('message', async (msg: TelegramMessage) => {
+    logger.info('接收到消息', {
+      chatId: msg.chat.id,
+      chatType: msg.chat.type,
+      messageId: msg.message_id,
+      fromUserId: msg.from?.id,
+      fromUsername: msg.from?.username,
+      text: msg.text?.substring(0, 200),
+      isCommand: msg.text?.startsWith('/'),
+      hasText: !!msg.text
+    });
+    
     // 忽略命令消息，已经在 onText 中处理
-    if (msg.text?.startsWith('/')) return;
+    if (msg.text?.startsWith('/')) {
+      logger.info('忽略命令消息', { chatId: msg.chat.id, text: msg.text });
+      return;
+    }
     
     // 只处理文本消息
     if (msg.text) {
       await handleTextMessage(msg);
+    } else {
+      logger.info('忽略非文本消息', {
+        chatId: msg.chat.id,
+        messageType: typeof msg.text
+      });
+    }
+  });
+  
+  // 处理新成员加入群聊事件
+  bot.on('new_chat_members', async (msg: TelegramMessage) => {
+    logger.info('检测到新成员加入', {
+      chatId: msg.chat.id,
+      chatTitle: msg.chat.title,
+      newMembersCount: msg.new_chat_members?.length || 0
+    });
+    
+    if (msg.new_chat_members) {
+      // 检查是否是机器人自己加入群聊
+      const botJoined = msg.new_chat_members.some((member: any) => 
+        member.id === botInfo?.id
+      );
+      
+      if (botJoined) {
+        logger.info('机器人加入新群', {
+          chatId: msg.chat.id,
+          chatTitle: msg.chat.title,
+          chatType: msg.chat.type
+        });
+        
+        const groupWelcomeText = `🤖 *感谢邀请我加入群聊！*
+
+我是加密货币交易分析机器人，可以帮助分析各种交易对。
+
+📝 *在群聊中使用方法：*
+• @我 分析 BTC/USDT
+• @我 ETHUSDT 现在走势如何？
+• 回复我的消息进行对话
+
+⚡ *并发控制：*
+• 每个群同时只能进行一个分析
+• 全局最多支持 ${config.maxConcurrentAnalysis} 个并发分析
+• 私聊和群聊分析互不影响
+
+💡 支持所有币安交易对，@我开始分析吧！`;
+        
+        // 使用纯文本模式发送欢迎消息，避免Markdown解析错误
+        await sendSafeMessage(msg.chat.id, groupWelcomeText, { parse_mode: undefined });
+      } else if (config.enableNewMemberWelcome) {
+        // 普通用户加入群聊（仅在启用欢迎消息时）
+        const newMembers = msg.new_chat_members.filter((member: any) => 
+          !member.is_bot && member.id !== botInfo?.id
+        );
+        
+        if (newMembers.length > 0) {
+          logger.info('普通用户加入群聊', {
+            chatId: msg.chat.id,
+            newMembersCount: newMembers.length,
+            usernames: newMembers.map((m: any) => m.username || m.first_name)
+          });
+          
+          // 为新成员生成欢迎消息
+          const memberNames = newMembers.map((member: any) => {
+            if (member.username) {
+              return `@${member.username}`;
+            } else {
+              return member.first_name || '新朋友';
+            }
+          }).join(' ');
+          
+          const newMemberWelcomeText = `🎉 *欢迎 ${memberNames} 加入群聊！*
+
+我是群里的加密货币交易分析机器人 🤖，可以为大家提供专业的交易分析服务。
+
+📊 *如何使用我：*
+• @我 分析 BTC/USDT
+• @我 ETHUSDT 走势如何？
+• @我 帮我看看 SOL 的技术指标
+• 回复我的任何消息进行进一步对话
+
+⚡ *使用规则：*
+• 每个群同时只能进行一个分析（避免刷屏）
+• 支持所有币安交易对
+• 提供多时间框架技术分析
+• 实时流式分析展示
+
+💡 *使用提示：*
+直接@我并说出你想分析的交易对即可，我会自动识别并提供专业分析！
+
+🚀 开始体验吧，@我试试看！`;
+          
+          // 使用纯文本模式发送欢迎消息，避免Markdown解析错误
+          await sendSafeMessage(msg.chat.id, newMemberWelcomeText, { parse_mode: undefined });
+        }
+      }
     }
   });
 
@@ -344,12 +586,23 @@ export async function startBot(): Promise<void> {
     // 初始化事件处理器
     initializeBotHandlers();
 
-    // 获取Bot信息
-    const botInfo = await bot.getMe();
+    // 获取Bot信息并缓存
+    botInfo = await bot.getMe();
     logger.info('Bot启动成功', {
       botId: botInfo.id,
       botUsername: botInfo.username,
-      botName: botInfo.first_name
+      botName: botInfo.first_name,
+      botCanJoinGroups: botInfo.can_join_groups,
+      botCanReadAllGroupMessages: botInfo.can_read_all_group_messages,
+      maxConcurrentAnalysis: config.maxConcurrentAnalysis
+    });
+    
+    // 输出重要的使用信息
+    logger.info('机器人配置信息', {
+      username: botInfo.username,
+      groupChatSupport: botInfo.can_join_groups,
+      readAllMessages: botInfo.can_read_all_group_messages,
+      mentionFormat: `@${botInfo.username}`
     });
 
   } catch (error) {
