@@ -4,6 +4,7 @@
 
 echo "🔨 开始构建项目..."
 
+
 # 清理旧的构建文件
 if [ -d "dist" ]; then
     echo "🧹 清理旧的构建文件..."
@@ -17,6 +18,9 @@ if [ $? -ne 0 ]; then
     echo "❌ TypeScript 类型检查失败"
     exit 1
 fi
+
+echo "安装必要依赖..."
+npm install
 
 # 编译 TypeScript
 echo "📦 编译 TypeScript 代码..."
