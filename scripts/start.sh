@@ -13,11 +13,10 @@ fi
 # 确保日志目录存在
 mkdir -p logs
 
-# 检查构建文件是否存在
-if [ ! -d "dist" ]; then
-    echo "📦 构建文件不存在，开始构建..."
-    ./scripts/build.sh
-fi
+# 每次都要构建文件
+echo "📦 开始构建..."
+./scripts/build.sh
+
 
 # 启动生产服务
 echo "🔥 启动生产服务器..."
