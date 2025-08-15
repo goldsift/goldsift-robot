@@ -7,32 +7,102 @@ import { IncomingMessage, ServerResponse } from 'http';
 import { logger } from '../logger.js';
 import { promptManager } from '../config/prompt-manager-v2.js';
 import { basicConfigManager } from '../config/basic-config-manager.js';
+import crypto from 'crypto';
+
+// 内存中存储的token及其过期时间
+const tokenStore = new Map<string, { expireAt: number; createdAt: number }>();
+
+/**
+ * 生成访问token
+ */
+function generateToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * 验证密码并生成token
+ */
+async function authenticateAndGenerateToken(password: string): Promise<string | null> {
+  try {
+    const adminPassword = await basicConfigManager.getConfigItem('adminPassword') || '123456';
+    
+    if (password === adminPassword) {
+      const token = generateToken();
+      const expireAt = Date.now() + 24 * 60 * 60 * 1000; // 24小时过期
+      tokenStore.set(token, { expireAt, createdAt: Date.now() });
+      
+      // 清理过期token
+      cleanupExpiredTokens();
+      
+      logger.info('新的访问token已生成', { tokenPrefix: token.substring(0, 8) });
+      return token;
+    }
+    
+    return null;
+  } catch (error) {
+    logger.error('认证失败', { error: error instanceof Error ? error.message : String(error) });
+    return null;
+  }
+}
+
+/**
+ * 验证token是否有效
+ */
+function validateToken(token: string): boolean {
+  const tokenInfo = tokenStore.get(token);
+  if (!tokenInfo) {
+    return false;
+  }
+  
+  if (Date.now() > tokenInfo.expireAt) {
+    tokenStore.delete(token);
+    return false;
+  }
+  
+  return true;
+}
+
+/**
+ * 清理过期token
+ */
+function cleanupExpiredTokens(): void {
+  const now = Date.now();
+  for (const [token, info] of tokenStore.entries()) {
+    if (now > info.expireAt) {
+      tokenStore.delete(token);
+    }
+  }
+}
 
 /**
  * 简单的访问控制
  */
-function checkAuth(req: IncomingMessage): boolean {
-  const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
-  
-  const auth = req.headers.authorization;
-  if (!auth) {
+async function checkAuth(req: IncomingMessage): Promise<boolean> {
+  try {
+    const auth = req.headers.authorization;
+    if (!auth) {
+      return false;
+    }
+
+    // 支持Bearer Token（推荐方式）
+    if (auth.startsWith('Bearer ')) {
+      const token = auth.substring(7);
+      return validateToken(token);
+    }
+
+    // 仍然支持Basic Auth作为备用
+    if (auth.startsWith('Basic ')) {
+      const credentials = Buffer.from(auth.substring(6), 'base64').toString();
+      const [username, password] = credentials.split(':');
+      const adminPassword = await basicConfigManager.getConfigItem('adminPassword') || '123456';
+      return username === 'admin' && password === adminPassword;
+    }
+
+    return false;
+  } catch (error) {
+    logger.error('认证检查失败', { error: error instanceof Error ? error.message : String(error) });
     return false;
   }
-
-  // 支持Basic Auth
-  if (auth.startsWith('Basic ')) {
-    const credentials = Buffer.from(auth.substring(6), 'base64').toString();
-    const [username, password] = credentials.split(':');
-    return username === 'admin' && password === adminPassword;
-  }
-
-  // 支持Bearer Token
-  if (auth.startsWith('Bearer ')) {
-    const token = auth.substring(7);
-    return token === adminPassword;
-  }
-
-  return false;
 }
 
 /**
@@ -88,13 +158,37 @@ export async function handleConfigRoutes(req: IncomingMessage, res: ServerRespon
   }
 
   // 检查路径是否匹配配置API
-  if (!pathname.startsWith('/api/config/') && !pathname.startsWith('/api/basic-config')) {
+  if (!pathname.startsWith('/api/config/') && !pathname.startsWith('/api/basic-config') && !pathname.startsWith('/api/auth/')) {
     return false;
   }
 
   try {
-    // 访问控制检查
-    if (!checkAuth(req)) {
+    // 登录API不需要认证检查
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      const body = await readRequestBody(req);
+      const { password } = JSON.parse(body);
+      
+      if (!password) {
+        sendErrorResponse(res, '缺少密码字段', 400);
+        return true;
+      }
+      
+      const token = await authenticateAndGenerateToken(password);
+      if (token) {
+        sendJsonResponse(res, {
+          success: true,
+          token,
+          message: '登录成功',
+          expiresIn: 24 * 60 * 60 * 1000 // 24小时
+        });
+      } else {
+        sendErrorResponse(res, '密码错误', 401);
+      }
+      return true;
+    }
+
+    // 其他API需要访问控制检查
+    if (!(await checkAuth(req))) {
       sendErrorResponse(res, '访问被拒绝，请提供正确的授权令牌', 401);
       return true;
     }
@@ -299,6 +393,38 @@ export async function handleConfigRoutes(req: IncomingMessage, res: ServerRespon
           success: false,
           message: `重新启动失败: ${error instanceof Error ? error.message : String(error)}`
         });
+      }
+      
+    } else if (pathname === '/api/basic-config/change-password' && req.method === 'POST') {
+      // 修改管理员密码
+      try {
+        const body = await readRequestBody(req);
+        const { oldPassword, newPassword } = JSON.parse(body);
+        
+        // 验证输入
+        if (!oldPassword || !newPassword) {
+          sendErrorResponse(res, '缺少必需字段：oldPassword 或 newPassword', 400);
+          return true;
+        }
+        
+        if (newPassword.length < 6) {
+          sendErrorResponse(res, '新密码长度不能少于6位', 400);
+          return true;
+        }
+        
+        // 修改密码
+        await basicConfigManager.changeAdminPassword(oldPassword, newPassword);
+        
+        sendJsonResponse(res, { 
+          success: true, 
+          message: '密码修改成功' 
+        });
+        
+      } catch (error) {
+        logger.error('修改密码失败', {
+          error: error instanceof Error ? error.message : String(error)
+        });
+        sendErrorResponse(res, error instanceof Error ? error.message : String(error));
       }
       
     } else {

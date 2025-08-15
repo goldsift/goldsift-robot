@@ -10,6 +10,7 @@ import { logger } from '../logger.js';
  * 基础配置接口
  */
 export interface BasicConfig {
+  adminPassword: string;
   telegramBotToken: string;
   openaiApiKey: string;
   openaiBaseUrl: string;
@@ -31,6 +32,7 @@ interface ConfigItem {
   description: string;
   defaultValue: string;
   required: boolean;
+  hidden?: boolean; // 是否在基础配置页面隐藏
 }
 
 /**
@@ -56,6 +58,14 @@ class BasicConfigManager {
    * 配置项定义
    */
   private configItems: ConfigItem[] = [
+    {
+      key: 'adminPassword',
+      type: 'string',
+      description: '管理员密码',
+      defaultValue: '123456',
+      required: true,
+      hidden: true // 隐藏，不在基础配置页面显示
+    },
     {
       key: 'telegramBotToken',
       type: 'string',
@@ -315,10 +325,34 @@ class BasicConfigManager {
   }
 
   /**
-   * 获取配置项定义
+   * 获取配置项定义（过滤隐藏项）
    */
   getConfigItems(): ConfigItem[] {
+    return this.configItems.filter(item => !item.hidden);
+  }
+
+  /**
+   * 获取所有配置项定义（包括隐藏项）
+   */
+  getAllConfigItems(): ConfigItem[] {
     return this.configItems;
+  }
+
+  /**
+   * 修改管理员密码
+   */
+  async changeAdminPassword(oldPassword: string, newPassword: string): Promise<void> {
+    await this.initialize();
+    
+    // 验证旧密码
+    const currentPassword = await this.getConfigItem('adminPassword');
+    if (currentPassword !== oldPassword) {
+      throw new Error('当前密码不正确');
+    }
+
+    // 更新密码
+    await this.setConfigItem('adminPassword', newPassword);
+    logger.info('管理员密码已更新');
   }
 
   /**

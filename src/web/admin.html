@@ -34,12 +34,27 @@
             background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
             color: white;
             padding: 15px;
-            text-align: center;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
         .header h1 {
             font-size: 1.5em;
             margin-bottom: 0;
+        }
+
+        .change-password-btn {
+            font-size: 12px !important;
+            padding: 6px 12px !important;
+            background: rgba(255, 255, 255, 0.2) !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            color: white !important;
+        }
+
+        .change-password-btn:hover {
+            background: rgba(255, 255, 255, 0.3) !important;
+            transform: none !important;
         }
 
         .content {
@@ -156,6 +171,82 @@
             color: #6c757d;
             font-size: 0.85em;
             margin-top: 4px;
+        }
+
+        /* 密码修改弹窗样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 10px;
+            width: 400px;
+            max-width: 90%;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #2c3e50;
+            font-size: 1.3em;
+        }
+
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .modal-form .form-group {
+            margin-bottom: 20px;
+        }
+
+        .modal-form input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+
+        .modal-form input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 25px;
         }
 
         .form-group textarea:focus {
@@ -352,10 +443,11 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🤖 AI机器人配置管理</h1>
-        </div>
+            <div class="container">
+            <div class="header">
+                <h1>🤖 AI机器人配置管理</h1>
+                <button class="btn btn-secondary change-password-btn" onclick="showChangePasswordModal()">🔑 修改密码</button>
+            </div>
 
         <div class="content">
             <!-- Tab 导航 -->
@@ -437,19 +529,156 @@
                 </form>
             </div>
         </div>
+
+        <!-- 密码修改弹窗 -->
+        <div id="changePasswordModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>🔑 修改管理员密码</h2>
+                    <span class="close" onclick="hideChangePasswordModal()">&times;</span>
+                </div>
+                <form class="modal-form" id="change-password-form">
+                    <div class="form-group">
+                        <label for="current-password">当前密码</label>
+                        <input type="password" id="current-password" name="currentPassword" placeholder="输入当前密码..." required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new-password">新密码</label>
+                        <input type="password" id="new-password" name="newPassword" placeholder="输入新密码..." required minlength="6">
+                    </div>
+                    <div class="form-group">
+                        <label for="confirm-password">确认新密码</label>
+                        <input type="password" id="confirm-password" name="confirmPassword" placeholder="再次输入新密码..." required minlength="6">
+                    </div>
+                    <div class="modal-buttons">
+                        <button type="button" class="btn btn-secondary" onclick="hideChangePasswordModal()">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="changePassword()">确认修改</button>
+                    </div>
+                </form>
+                <div id="change-password-status" class="status"></div>
+            </div>
+        </div>
     </div>
 
     <script>
         const API_BASE = window.location.origin;
-        const adminPassword = localStorage.getItem('admin_password') || prompt('请输入管理员密码（如未设置可留空）:') || '';
-        if (adminPassword) {
-            localStorage.setItem('admin_password', adminPassword);
+        let accessToken = localStorage.getItem('admin_token');
+        let isAuthenticating = false;
+
+        // 异步获取或验证token
+        async function ensureAuthenticated() {
+            if (isAuthenticating) {
+                return;
+            }
+
+            if (!accessToken) {
+                await requestNewToken();
+                return;
+            }
+
+            // 验证当前token是否有效
+            try {
+                const testResponse = await fetch(`${API_BASE}/api/config/prompts?_t=${Date.now()}`, {
+                    headers: getHeaders(),
+                    cache: 'no-cache'
+                });
+
+                if (testResponse.status === 401) {
+                    // token无效，请求新token
+                    localStorage.removeItem('admin_token');
+                    accessToken = null;
+                    await requestNewToken();
+                }
+            } catch (error) {
+                console.error('Token验证失败:', error);
+            }
         }
 
-        const headers = {
-            'Content-Type': 'application/json',
-            ...(adminPassword ? { 'Authorization': `Bearer ${adminPassword}` } : {})
-        };
+        // 请求新的token
+        async function requestNewToken() {
+            if (isAuthenticating) {
+                return;
+            }
+
+            isAuthenticating = true;
+            try {
+                const password = prompt('请输入管理员密码:');
+                if (!password) {
+                    alert('需要输入密码才能访问管理界面');
+                    window.location.href = '/';
+                    return;
+                }
+
+                const response = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    accessToken = data.token;
+                    localStorage.setItem('admin_token', accessToken);
+                    console.log('登录成功');
+                } else {
+                    const errorData = await response.json();
+                    alert(`登录失败: ${errorData.error || '密码错误'}`);
+                    await requestNewToken(); // 重新尝试
+                }
+            } catch (error) {
+                console.error('登录请求失败:', error);
+                alert('登录请求失败，请检查网络连接');
+            } finally {
+                isAuthenticating = false;
+            }
+        }
+
+        // 获取请求头
+        function getHeaders() {
+            return {
+                'Content-Type': 'application/json',
+                ...(accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {})
+            };
+        }
+
+        // 包装API请求，自动处理token失效
+        async function apiRequest(url, options = {}) {
+            await ensureAuthenticated();
+            
+            if (!accessToken) {
+                throw new Error('未获取到有效的访问令牌');
+            }
+
+            const response = await fetch(url, {
+                ...options,
+                headers: {
+                    ...getHeaders(),
+                    ...(options.headers || {})
+                }
+            });
+
+            if (response.status === 401) {
+                // token失效，重新获取
+                localStorage.removeItem('admin_token');
+                accessToken = null;
+                await requestNewToken();
+                
+                // 重新尝试请求
+                if (accessToken) {
+                    return fetch(url, {
+                        ...options,
+                        headers: {
+                            ...getHeaders(),
+                            ...(options.headers || {})
+                        }
+                    });
+                }
+            }
+
+            return response;
+        }
 
         function showStatus(message, type, statusId = 'prompt-status') {
             const statusEl = document.getElementById(statusId);
@@ -477,8 +706,7 @@
 
         async function loadVersions() {
             try {
-                const response = await fetch(`${API_BASE}/api/config/prompts/versions?_t=${Date.now()}`, {
-                    headers,
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/versions?_t=${Date.now()}`, {
                     cache: 'no-cache'
                 });
 
@@ -512,8 +740,7 @@
             try {
                 showStatus('正在加载配置...', 'loading');
                 
-                const response = await fetch(`${API_BASE}/api/config/prompts?_t=${Date.now()}`, {
-                    headers,
+                const response = await apiRequest(`${API_BASE}/api/config/prompts?_t=${Date.now()}`, {
                     cache: 'no-cache'
                 });
 
@@ -559,9 +786,8 @@
                     analysisPrompt: document.getElementById('analysis-prompt').value
                 };
 
-                const response = await fetch(`${API_BASE}/api/config/prompts/save-new`, {
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/save-new`, {
                     method: 'POST',
-                    headers,
                     body: JSON.stringify(config)
                 });
 
@@ -600,9 +826,8 @@
                     analysisPrompt: document.getElementById('analysis-prompt').value
                 };
 
-                const response = await fetch(`${API_BASE}/api/config/prompts/update-current`, {
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/update-current`, {
                     method: 'POST',
-                    headers,
                     body: JSON.stringify(config)
                 });
 
@@ -632,9 +857,8 @@
             try {
                 showStatus('正在删除当前版本...', 'loading');
                 
-                const response = await fetch(`${API_BASE}/api/config/prompts/delete-current`, {
-                    method: 'DELETE',
-                    headers
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/delete-current`, {
+                    method: 'DELETE'
                 });
 
                 if (!response.ok) {
@@ -665,9 +889,8 @@
                 try {
                     showStatus('正在切换版本...', 'loading');
                     
-                    const response = await fetch(`${API_BASE}/api/config/prompts/switch/${selectedId}`, {
-                        method: 'POST',
-                        headers
+                    const response = await apiRequest(`${API_BASE}/api/config/prompts/switch/${selectedId}`, {
+                        method: 'POST'
                     });
 
                     if (!response.ok) {
@@ -699,8 +922,7 @@
             try {
                 showStatus('正在加载版本列表...', 'loading');
                 
-                const response = await fetch(`${API_BASE}/api/config/prompts/versions?_t=${Date.now()}`, {
-                    headers,
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/versions?_t=${Date.now()}`, {
                     cache: 'no-cache'
                 });
 
@@ -770,9 +992,8 @@
             try {
                 showStatus('正在切换版本...', 'loading');
                 
-                const response = await fetch(`${API_BASE}/api/config/prompts/switch/${configId}`, {
-                    method: 'POST',
-                    headers
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/switch/${configId}`, {
+                    method: 'POST'
                 });
 
                 if (!response.ok) {
@@ -801,9 +1022,8 @@
             try {
                 showStatus('正在删除版本...', 'loading');
                 
-                const response = await fetch(`${API_BASE}/api/config/prompts/delete/${configId}`, {
-                    method: 'DELETE',
-                    headers
+                const response = await apiRequest(`${API_BASE}/api/config/prompts/delete/${configId}`, {
+                    method: 'DELETE'
                 });
 
                 if (!response.ok) {
@@ -923,8 +1143,7 @@
             try {
                 showStatus('正在加载基础配置...', 'loading', 'basic-status');
                 
-                const response = await fetch(`${API_BASE}/api/basic-config?_t=${Date.now()}`, {
-                    headers,
+                const response = await apiRequest(`${API_BASE}/api/basic-config?_t=${Date.now()}`, {
                     cache: 'no-cache'
                 });
 
@@ -980,9 +1199,8 @@
                     config[key] = value;
                 });
 
-                const response = await fetch(`${API_BASE}/api/basic-config`, {
+                const response = await apiRequest(`${API_BASE}/api/basic-config`, {
                     method: 'POST',
-                    headers,
                     body: JSON.stringify(config)
                 });
 
@@ -1004,9 +1222,8 @@
             try {
                 showStatus('正在测试配置...', 'loading', 'basic-status');
                 
-                const response = await fetch(`${API_BASE}/api/basic-config/test`, {
-                    method: 'POST',
-                    headers
+                const response = await apiRequest(`${API_BASE}/api/basic-config/test`, {
+                    method: 'POST'
                 });
 
                 if (!response.ok) {
@@ -1048,9 +1265,8 @@
 
                 showStatus('正在重新启动服务...', 'loading', 'basic-status');
                 
-                const response = await fetch(`${API_BASE}/api/basic-config/restart`, {
-                    method: 'POST',
-                    headers
+                const response = await apiRequest(`${API_BASE}/api/basic-config/restart`, {
+                    method: 'POST'
                 });
 
                 if (!response.ok) {
@@ -1087,15 +1303,111 @@
             }
         }
 
+        // 密码修改弹窗函数
+        function showChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'block';
+            document.getElementById('current-password').value = '';
+            document.getElementById('new-password').value = '';
+            document.getElementById('confirm-password').value = '';
+            document.getElementById('change-password-status').style.display = 'none';
+        }
+
+        function hideChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+        }
+
+        async function changePassword() {
+            try {
+                const currentPassword = document.getElementById('current-password').value;
+                const newPassword = document.getElementById('new-password').value;
+                const confirmPassword = document.getElementById('confirm-password').value;
+
+                // 验证输入
+                if (!currentPassword || !newPassword || !confirmPassword) {
+                    showStatus('请填写所有字段', 'error', 'change-password-status');
+                    return;
+                }
+
+                if (newPassword.length < 6) {
+                    showStatus('新密码长度不能少于6位', 'error', 'change-password-status');
+                    return;
+                }
+
+                if (newPassword !== confirmPassword) {
+                    showStatus('两次输入的新密码不一致', 'error', 'change-password-status');
+                    return;
+                }
+
+                showStatus('正在修改密码...', 'loading', 'change-password-status');
+
+                const response = await apiRequest(`${API_BASE}/api/basic-config/change-password`, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        oldPassword: currentPassword,
+                        newPassword: newPassword
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || `HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus('密码修改成功！token将失效，请重新登录。', 'success', 'change-password-status');
+                    
+                    // 清除当前token，强制重新登录
+                    localStorage.removeItem('admin_token');
+                    accessToken = null;
+                    
+                    // 3秒后关闭弹窗并刷新页面
+                    setTimeout(() => {
+                        hideChangePasswordModal();
+                        window.location.reload();
+                    }, 3000);
+                } else {
+                    showStatus(data.message || '密码修改失败', 'error', 'change-password-status');
+                }
+
+            } catch (error) {
+                console.error('修改密码失败:', error);
+                showStatus(`修改密码失败: ${error.message}`, 'error', 'change-password-status');
+            }
+        }
+
+        // 点击弹窗外部关闭弹窗
+        window.onclick = function(event) {
+            const modal = document.getElementById('changePasswordModal');
+            if (event.target === modal) {
+                hideChangePasswordModal();
+            }
+        }
+
         // 页面加载时自动加载配置
-        window.addEventListener('load', function() {
-            loadConfig();
-            loadBasicConfig();
-            
-            // 为所有密码切换按钮添加标题提示
-            document.querySelectorAll('.password-toggle').forEach(toggle => {
-                toggle.title = '显示密码';
-            });
+        window.addEventListener('load', async function() {
+            try {
+                // 清理旧的密码存储（如果存在）
+                if (localStorage.getItem('admin_password')) {
+                    localStorage.removeItem('admin_password');
+                }
+                
+                // 确保已认证
+                await ensureAuthenticated();
+                
+                // 加载配置
+                await loadConfig();
+                await loadBasicConfig();
+                
+                // 为所有密码切换按钮添加标题提示
+                document.querySelectorAll('.password-toggle').forEach(toggle => {
+                    toggle.title = '显示密码';
+                });
+            } catch (error) {
+                console.error('页面初始化失败:', error);
+                alert('页面初始化失败，请刷新重试');
+            }
         });
     </script>
 </body>

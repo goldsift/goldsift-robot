@@ -63,33 +63,15 @@ robot/
 创建 `.env` 文件：
 
 ```env
-# Telegram Bot配置
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+   # 服务配置
+   PORT=3000
+   NODE_ENV=development
 
-# OpenAI兼容API配置
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_BASE_URL=https://api.openai.com/v1
-OPENAI_MODEL=gpt-4o  # 可自定义模型
-AI_PROVIDER=openai   # AI提供商类型: openai, gemini, claude
+   # 日志配置
+   LOG_LEVEL=info
+   LOG_FILE_MAX_SIZE=10MB
+   LOG_FILE_MAX_FILES=5
 
-# 币安API配置（可选，仅获取K线数据无需API Key）
-BINANCE_API_KEY=your_binance_api_key
-BINANCE_SECRET=your_binance_secret
-
-# 服务配置
-PORT=3000
-
-# 并发控制配置
-MAX_CONCURRENT_ANALYSIS=10  # 全局最大并发分析数量（1-100之间）
-
-# 新成员欢迎消息配置
-ENABLE_NEW_MEMBER_WELCOME=true  # 是否为新用户发送欢迎消息
-
-# 时区配置
-TIMEZONE=Asia/Shanghai  # 支持全球任意IANA时区
-
-# Web管理界面配置
-ADMIN_PASSWORD=your_admin_password  # 可选，管理界面访问密码
 ```
 
 ## 安装和运行
@@ -299,9 +281,8 @@ docker stop crypto-bot && docker rm crypto-bot
 - `POST /api/basic-config/test` - 测试配置连接
 
 #### 🔐 访问控制
-管理界面和API使用Basic Auth认证：
-- 用户名: `admin`
-- 密码: 环境变量`ADMIN_PASSWORD`（默认: `admin123`）
+管理界面和API使用Auth认证：
+- 密码: 默认: `123456`,部署后修改默认密码
 
 ### 🚀 **部署流程**
 
@@ -329,7 +310,7 @@ npm start
 ```
 
 #### 3. **完成配置**
-1. 访问 `http://localhost:3000/admin`
+1. 访问 `http://localhost:3000/admin`,使用默认密码123456登录,登录成功后修改密码
 2. 点击"基础配置管理"标签页
 3. 填写必要配置：
    - **Telegram Bot Token**: 从 @BotFather 获取
