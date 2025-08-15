@@ -11,6 +11,10 @@ if [ -d "dist" ]; then
     rm -rf dist
 fi
 
+
+echo "安装必要依赖..."
+npm install
+
 # TypeScript 类型检查
 echo "📝 进行 TypeScript 类型检查..."
 npx tsc --noEmit
@@ -19,8 +23,6 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-echo "安装必要依赖..."
-npm install
 
 # 编译 TypeScript
 echo "📦 编译 TypeScript 代码..."
