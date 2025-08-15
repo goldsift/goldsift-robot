@@ -86,6 +86,7 @@ async function createConfigFromDatabase(): Promise<Config> {
       
       // 仍然从环境变量加载的配置
       port: validatePort(process.env.PORT || '3000'),
+      host: process.env.HOST || '0.0.0.0',
       nodeEnv: process.env.NODE_ENV || 'development',
       logLevel: validateLogLevel(process.env.LOG_LEVEL || 'info')
     };

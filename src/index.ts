@@ -72,12 +72,14 @@ function startHttpServer(): Promise<void> {
       }
     });
 
-    httpServer.listen(config.port, () => {
+    httpServer.listen(config.port, config.host, () => {
       logger.info(`🌐 HTTP服务器启动`, {
+        host: config.host,
         port: config.port,
         healthEndpoint: `/health`,
         adminInterface: `/admin`,
-        configApi: `/api/config/prompts`
+        configApi: `/api/config/prompts`,
+        externalAccess: config.host === '0.0.0.0' ? '支持外部访问' : '仅本地访问'
       });
       resolve();
     });
@@ -133,7 +135,9 @@ async function startApplication(): Promise<void> {
       logger.info('✅ 应用程序完全启动成功', {
         botStatus: 'running',
         logLevel: config.logLevel,
-        adminUrl: `http://localhost:${config.port}/admin`
+        adminUrl: config.host === '0.0.0.0' 
+          ? `http://服务器IP:${config.port}/admin` 
+          : `http://localhost:${config.port}/admin`
       });
 
       // 在开发环境下输出额外信息
@@ -147,7 +151,9 @@ async function startApplication(): Promise<void> {
     } else {
       // 配置不完整，只启动管理界面
       logger.warn('⚠️ 配置不完整，仅启动管理界面', {
-        adminUrl: `http://localhost:${config.port}/admin`,
+        adminUrl: config.host === '0.0.0.0' 
+          ? `http://服务器IP:${config.port}/admin` 
+          : `http://localhost:${config.port}/admin`,
         message: '请访问管理界面完成配置，然后重新启动服务'
       });
       

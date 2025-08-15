@@ -100,6 +100,8 @@ export interface Config {
   binanceApiKey: string | undefined;
   binanceSecret: string | undefined;
   port: number;
+  /** HTTP服务器监听的主机地址，'0.0.0.0'允许外部访问，'127.0.0.1'仅本地访问 */
+  host: string;
   nodeEnv: string;
   logLevel: LogLevel;
   /** 时区配置，格式如 'Asia/Shanghai', 'America/New_York' 等 */
