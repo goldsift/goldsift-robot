@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>AI机器人配置管理</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f8f8f8;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 1.5em;
+            margin-bottom: 0;
+        }
+
+        .content {
+            padding: 20px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 2px solid #e0e0e0;
+            margin-bottom: 16px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: none;
+            background: #f8f9fa;
+            color: #6c757d;
+            font-size: 15px;
+            font-weight: bold;
+            border-radius: 6px 6px 0 0;
+            margin-right: 4px;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: #667eea;
+            color: white;
+            border-bottom: 2px solid #667eea;
+        }
+
+        .tab:hover:not(.active) {
+            background: #e9ecef;
+            color: #495057;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* 密码输入框样式 */
+        .password-input-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            color: #6c757d;
+            font-size: 18px;
+            user-select: none;
+            z-index: 10;
+        }
+
+        .password-toggle:hover {
+            color: #495057;
+        }
+
+        .password-input {
+            padding-right: 50px !important;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 6px;
+            color: #2c3e50;
+            font-size: 1.0em;
+        }
+
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.4;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        /* 动态配置项样式 */
+        .config-input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 13px;
+            transition: border-color 0.3s;
+        }
+
+        .config-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 8px rgba(102, 126, 234, 0.1);
+        }
+
+        .config-hint {
+            display: block;
+            color: #6c757d;
+            font-size: 0.85em;
+            margin-top: 4px;
+        }
+
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.1);
+        }
+
+        .system-prompt {
+            min-height: 120px;
+        }
+
+        .analysis-prompt {
+            min-height: 500px;
+        }
+
+        .variables-hint {
+            background: #f8f9ff;
+            border: 1px solid #e3e8ff;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+
+        .variables-hint h3 {
+            color: #4c51bf;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .variables-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+        }
+
+        .variable-item {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+
+        .variable-name {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-weight: bold;
+            color: #2d3748;
+            margin-bottom: 4px;
+        }
+
+        .variable-desc {
+            color: #4a5568;
+            font-size: 0.9em;
+            margin-bottom: 4px;
+        }
+
+        .variable-example {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.85em;
+            color: #718096;
+            font-style: italic;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 24px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #218838;
+            transform: translateY(-2px);
+        }
+
+        .status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 5px;
+            display: none;
+            font-size: 14px;
+        }
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .status.loading {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .config-info {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 5px;
+            margin-bottom: 16px;
+            border-left: 4px solid #17a2b8;
+        }
+
+        .config-info h3 {
+            color: #0c5460;
+            margin-bottom: 10px;
+        }
+
+        .config-meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        @media (max-width: 768px) {
+            .buttons {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                text-align: center;
+            }
+
+            .variables-list {
+                grid-template-columns: 1fr;
+            }
+
+            .tabs {
+                flex-direction: column;
+            }
+
+            .tab {
+                margin-right: 0;
+                margin-bottom: 2px;
+                border-radius: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 AI机器人配置管理</h1>
+        </div>
+
+        <div class="content">
+            <!-- Tab 导航 -->
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('basic-config')">⚙️ 基础配置管理</button>
+                <button class="tab" onclick="switchTab('prompt-config')">📝 提示词配置管理</button>
+            </div>
+
+            <!-- 提示词配置管理 Tab -->
+            <div id="prompt-config" class="tab-content">
+                <div class="config-info">
+                    <h3>📊 当前使用版本</h3>
+                    <div class="config-meta">
+                        <div><strong>版本:</strong> <span id="config-version">加载中...</span></div>
+                        <div><strong>最后修改:</strong> <span id="config-modified">加载中...</span></div>
+                        <div><strong>版本切换:</strong> 
+                            <select id="version-selector" style="margin-left: 10px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                                <option value="">选择版本...</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <form id="prompt-config-form">
+                <div class="form-group">
+                    <label for="system-prompt">🎯 系统提示词 (System Prompt)</label>
+                    <textarea id="system-prompt" name="systemPrompt" class="system-prompt" placeholder="输入系统级别的AI角色设定..."></textarea>
+                    <small style="color: #6c757d;">定义AI的基本角色和能力，这是AI理解自己身份的基础提示词。</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="analysis-prompt">📈 分析提示词 (Analysis Prompt)</label>
+                    <textarea id="analysis-prompt" name="analysisPrompt" class="analysis-prompt" placeholder="输入完整的交易分析提示词模板..."></textarea>
+                    <small style="color: #6c757d;">这是完整的交易分析提示词模板，支持变量替换。</small>
+                    
+                    <div class="variables-hint">
+                        <h3>💡 可用变量 (Available Variables)</h3>
+                        <p style="margin-bottom: 15px; color: #4a5568;">在提示词中使用以下变量，系统会自动替换为实际值：</p>
+                        <div class="variables-list" id="variables-list">
+                            <!-- 变量列表将通过JavaScript动态加载 -->
+                        </div>
+                    </div>
+                </div>
+
+                <div class="buttons">
+                    <button type="button" class="btn btn-primary" onclick="saveAsNewVersion()">💾 保存为新版本并使用</button>
+                   <!-- <button type="button" class="btn btn-secondary" onclick="useCurrentVersion()">🔄 使用当前版本</button> -->
+                    <button type="button" class="btn btn-secondary" onclick="saveCurrentVersion()">💾 保存当前版本</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteCurrentVersion()">🗑️删除当前版本</button>
+                </div>
+
+                <div id="prompt-status" class="status"></div>
+                </form>
+            </div>
+
+            <!-- 基础配置管理 Tab -->
+            <div id="basic-config" class="tab-content active">
+                <div class="config-info">
+                    <h3>⚙️ 基础配置管理</h3>
+                    <div class="config-meta">
+                        <div><strong>说明:</strong> 管理机器人的基础运行配置</div>
+                    </div>
+                </div>
+
+                <form id="basic-config-form">
+                    <!-- 动态生成的配置项将在这里插入 -->
+                    <div id="dynamic-config-items">
+                        <!-- 配置项将通过 JavaScript 动态生成 -->
+                    </div>
+
+                    <div class="buttons">
+                        <button type="button" class="btn btn-primary" onclick="saveBasicConfig()">💾 保存基础配置</button>
+                        <!-- <button type="button" class="btn btn-secondary" onclick="loadBasicConfig()">🔄 重新加载</button> -->
+                        <!-- <button type="button" class="btn btn-secondary" onclick="testBasicConfig()">🧪 测试配置</button> -->
+                        <button type="button" class="btn btn-success" onclick="restartServices()">🚀 重新启动服务</button>
+                    </div>
+
+                    <div id="basic-status" class="status"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        const adminPassword = localStorage.getItem('admin_password') || prompt('请输入管理员密码（如未设置可留空）:') || '';
+        if (adminPassword) {
+            localStorage.setItem('admin_password', adminPassword);
+        }
+
+        const headers = {
+            'Content-Type': 'application/json',
+            ...(adminPassword ? { 'Authorization': `Bearer ${adminPassword}` } : {})
+        };
+
+        function showStatus(message, type, statusId = 'prompt-status') {
+            const statusEl = document.getElementById(statusId);
+            statusEl.innerHTML = message;
+            statusEl.className = `status ${type}`;
+            statusEl.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        function renderVariables(variables) {
+            const container = document.getElementById('variables-list');
+            container.innerHTML = variables.map(variable => `
+                <div class="variable-item">
+                    <div class="variable-name">{${variable.name}}</div>
+                    <div class="variable-desc">${variable.description}</div>
+                    <div class="variable-example">示例: ${variable.example}</div>
+                </div>
+            `).join('');
+        }
+
+        async function loadVersions() {
+            try {
+                const response = await fetch(`${API_BASE}/api/config/prompts/versions?_t=${Date.now()}`, {
+                    headers,
+                    cache: 'no-cache'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const selector = document.getElementById('version-selector');
+                
+                // 清空选择器
+                selector.innerHTML = '<option value="">选择版本...</option>';
+                
+                // 添加版本选项
+                data.versions.forEach(version => {
+                    const option = document.createElement('option');
+                    option.value = version.id;
+                    option.textContent = `v${version.version} (ID:${version.id}) ${version.enabled ? '- 当前' : ''}`;
+                    if (version.enabled) {
+                        option.selected = true;
+                    }
+                    selector.appendChild(option);
+                });
+                
+            } catch (error) {
+                console.error('加载版本列表失败:', error);
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                showStatus('正在加载配置...', 'loading');
+                
+                const response = await fetch(`${API_BASE}/api/config/prompts?_t=${Date.now()}`, {
+                    headers,
+                    cache: 'no-cache'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // 填充表单
+                document.getElementById('system-prompt').value = data.config.systemPrompt;
+                document.getElementById('analysis-prompt').value = data.config.analysisPrompt;
+                
+                // 更新配置信息
+                document.getElementById('config-version').textContent = data.config.version;
+                document.getElementById('config-modified').textContent = new Date(data.config.lastModified).toLocaleString('zh-CN');
+                
+                // 渲染可用变量
+                renderVariables(data.availableVariables);
+                
+                // 加载版本列表
+                await loadVersions();
+                
+                showStatus('配置加载成功！', 'success');
+                
+            } catch (error) {
+                console.error('加载配置失败:', error);
+                showStatus(`加载配置失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 保存为新版本并使用
+        async function saveAsNewVersion() {
+            try {
+                showStatus('正在保存为新版本...', 'loading');
+                
+                const version = prompt('请输入新版本号:', '1.0.0');
+                if (!version) return;
+                
+                const config = {
+                    version: version,
+                    systemPrompt: document.getElementById('system-prompt').value,
+                    analysisPrompt: document.getElementById('analysis-prompt').value
+                };
+
+                const response = await fetch(`${API_BASE}/api/config/prompts/save-new`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // 重新加载配置
+                await loadConfig();
+                
+                showStatus(`新版本 ${data.config.version} 保存成功并已启用！`, 'success');
+                
+            } catch (error) {
+                console.error('保存新版本失败:', error);
+                showStatus(`保存新版本失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 使用当前版本（重新加载）
+        async function useCurrentVersion() {
+            await loadConfig();
+        }
+
+        // 保存当前版本（更新）
+        async function saveCurrentVersion() {
+            try {
+                showStatus('正在保存当前版本...', 'loading');
+                
+                const version = document.getElementById('config-version').textContent;
+                
+                const config = {
+                    version: version,
+                    systemPrompt: document.getElementById('system-prompt').value,
+                    analysisPrompt: document.getElementById('analysis-prompt').value
+                };
+
+                const response = await fetch(`${API_BASE}/api/config/prompts/update-current`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // 更新配置信息
+                document.getElementById('config-modified').textContent = new Date(data.config.lastModified).toLocaleString('zh-CN');
+                
+                showStatus('当前版本保存成功！', 'success');
+                
+            } catch (error) {
+                console.error('保存当前版本失败:', error);
+                showStatus(`保存当前版本失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 删除当前版本
+        async function deleteCurrentVersion() {
+            if (!confirm('确定要删除当前版本吗？系统会自动切换到其他版本。')) {
+                return;
+            }
+
+            try {
+                showStatus('正在删除当前版本...', 'loading');
+                
+                const response = await fetch(`${API_BASE}/api/config/prompts/delete-current`, {
+                    method: 'DELETE',
+                    headers
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // 重新加载配置
+                await loadConfig();
+                
+                showStatus('当前版本已删除，已自动切换到其他版本！', 'success');
+                
+            } catch (error) {
+                console.error('删除当前版本失败:', error);
+                showStatus(`删除当前版本失败: ${error.message}`, 'error');
+            }
+        }
+
+
+
+        // 版本选择器事件处理
+        document.getElementById('version-selector').addEventListener('change', async function(e) {
+            const selectedId = e.target.value;
+            if (!selectedId) return;
+            
+            if (confirm('确定要切换到这个版本吗？')) {
+                try {
+                    showStatus('正在切换版本...', 'loading');
+                    
+                    const response = await fetch(`${API_BASE}/api/config/prompts/switch/${selectedId}`, {
+                        method: 'POST',
+                        headers
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    const data = await response.json();
+                    
+                    // 重新加载配置
+                    await loadConfig();
+                    
+                    showStatus(`已切换到版本 ${data.config.version}！`, 'success');
+                    
+                } catch (error) {
+                    console.error('切换版本失败:', error);
+                    showStatus(`切换版本失败: ${error.message}`, 'error');
+                    
+                    // 恢复选择器状态
+                    await loadVersions();
+                }
+            } else {
+                // 恢复选择器状态
+                await loadVersions();
+            }
+        });
+
+        // 显示版本管理
+        async function showVersions() {
+            try {
+                showStatus('正在加载版本列表...', 'loading');
+                
+                const response = await fetch(`${API_BASE}/api/config/prompts/versions?_t=${Date.now()}`, {
+                    headers,
+                    cache: 'no-cache'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                let versionsHtml = '<h3>📜 版本管理</h3>';
+                if (data.versions.length === 0) {
+                    versionsHtml += '<p>暂无版本记录</p>';
+                } else {
+                    versionsHtml += '<div style="max-height: 500px; overflow-y: auto;">';
+                    data.versions.forEach((config, index) => {
+                        const isEnabled = config.enabled;
+                        const borderColor = isEnabled ? '#28a745' : '#ddd';
+                        const bgColor = isEnabled ? '#f8fff8' : '#ffffff';
+                        
+                        versionsHtml += `
+                            <div style="border: 2px solid ${borderColor}; margin: 10px 0; padding: 15px; border-radius: 8px; background: ${bgColor};">
+                                <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 10px;">
+                                    <div style="font-weight: bold; color: ${isEnabled ? '#28a745' : '#333'};">
+                                        ${isEnabled ? '🟢 ' : '⚪ '}版本 ${config.version} (ID: ${config.id})
+                                        ${isEnabled ? ' - 当前使用' : ''}
+                                    </div>
+                                    <div style="margin-left: auto;">
+                                        ${!isEnabled ? `
+                                            <button onclick="switchVersion(${config.id})" style="margin-right: 5px; padding: 4px 8px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                                切换
+                                            </button>
+                                            <button onclick="deleteVersion(${config.id})" style="padding: 4px 8px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                                删除
+                                            </button>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                                <div style="font-size: 0.85em; color: #666; margin-bottom: 8px;">
+                                    创建时间: ${new Date(config.lastModified).toLocaleString('zh-CN')}
+                                </div>
+                                <div style="font-size: 0.9em; color: #666; margin-bottom: 5px;">
+                                    <strong>系统提示词:</strong> ${config.systemPrompt.substring(0, 80)}${config.systemPrompt.length > 80 ? '...' : ''}
+                                </div>
+                                <div style="font-size: 0.9em; color: #666;">
+                                    <strong>分析提示词:</strong> ${config.analysisPrompt.substring(0, 80)}${config.analysisPrompt.length > 80 ? '...' : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                    versionsHtml += '</div>';
+                }
+                
+                showStatus(versionsHtml, 'success');
+                
+            } catch (error) {
+                console.error('加载版本列表失败:', error);
+                showStatus(`加载版本列表失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 切换到指定版本
+        async function switchVersion(configId) {
+            if (!confirm('确定要切换到这个版本吗？')) {
+                return;
+            }
+
+            try {
+                showStatus('正在切换版本...', 'loading');
+                
+                const response = await fetch(`${API_BASE}/api/config/prompts/switch/${configId}`, {
+                    method: 'POST',
+                    headers
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // 重新加载当前配置到表单
+                await loadConfig();
+                
+                showStatus(`版本切换成功！当前使用版本: ${data.config.version}`, 'success');
+                
+            } catch (error) {
+                console.error('切换版本失败:', error);
+                showStatus(`切换版本失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 删除指定版本
+        async function deleteVersion(configId) {
+            if (!confirm('确定要删除这个版本吗？此操作不可撤销！')) {
+                return;
+            }
+
+            try {
+                showStatus('正在删除版本...', 'loading');
+                
+                const response = await fetch(`${API_BASE}/api/config/prompts/delete/${configId}`, {
+                    method: 'DELETE',
+                    headers
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                showStatus('版本删除成功！', 'success');
+                
+                // 刷新版本列表
+                setTimeout(() => {
+                    showVersions();
+                }, 1000);
+                
+            } catch (error) {
+                console.error('删除版本失败:', error);
+                showStatus(`删除版本失败: ${error.message}`, 'error');
+            }
+        }
+
+        // Tab切换功能
+        function switchTab(tabId) {
+            // 隐藏所有tab内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // 移除所有tab的active状态
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的tab内容
+            document.getElementById(tabId).classList.add('active');
+            
+            // 激活对应的tab按钮
+            event.target.classList.add('active');
+        }
+
+        // 配置项图标映射
+        function getConfigIcon(key) {
+            const iconMap = {
+                'telegramBotToken': '🤖',
+                'openaiApiKey': '🧠',
+                'openaiBaseUrl': '🌐',
+                'openaiModel': '🎯',
+                'aiProvider': '🔧',
+                'timezone': '🌍',
+                'binanceApiKey': '💰',
+                'binanceSecret': '🔐',
+                'maxConcurrentAnalysis': '⚡',
+                'enableNewMemberWelcome': '👋'
+            };
+            return iconMap[key] || '⚙️';
+        }
+
+        // 判断是否为密码类型字段
+        function isPasswordField(key) {
+            const passwordKeywords = ['password', 'secret', 'token', 'key'];
+            return passwordKeywords.some(keyword => key.toLowerCase().includes(keyword));
+        }
+
+        // 动态生成配置项HTML
+        function generateConfigItemHTML(item, value) {
+            const icon = getConfigIcon(item.key);
+            const isPassword = isPasswordField(item.key);
+            const required = item.required ? '' : ' (可选)';
+            
+            let inputHTML = '';
+            
+            if (item.type === 'boolean') {
+                inputHTML = `
+                    <select id="${item.key}" name="${item.key}" class="config-input">
+                        <option value="true" ${value === true ? 'selected' : ''}>启用</option>
+                        <option value="false" ${value === false ? 'selected' : ''}>禁用</option>
+                    </select>
+                `;
+            } else if (item.key === 'aiProvider') {
+                inputHTML = `
+                    <select id="${item.key}" name="${item.key}" class="config-input">
+                        <option value="openai" ${value === 'openai' ? 'selected' : ''}>OpenAI</option>
+                        <option value="gemini" ${value === 'gemini' ? 'selected' : ''}>Gemini</option>
+                        <option value="claude" ${value === 'claude' ? 'selected' : ''}>Claude</option>
+                    </select>
+                `;
+            } else if (isPassword) {
+                inputHTML = `
+                    <div class="password-input-container">
+                        <input type="password" id="${item.key}" name="${item.key}" 
+                               placeholder="输入${item.description}..." 
+                               class="password-input config-input" 
+                               value="${value || ''}">
+                        <span class="password-toggle" onclick="togglePasswordVisibility('${item.key}')">👁️</span>
+                    </div>
+                `;
+            } else {
+                const inputType = item.type === 'number' ? 'number' : 
+                                 item.key.includes('url') ? 'url' : 'text';
+                inputHTML = `
+                    <input type="${inputType}" id="${item.key}" name="${item.key}" 
+                           placeholder="输入${item.description}..." 
+                           class="config-input" 
+                           value="${value || ''}">
+                `;
+            }
+            
+            return `
+                <div class="form-group">
+                    <label for="${item.key}">${icon} ${item.description}${required}</label>
+                    ${inputHTML}
+                    <small class="config-hint">${item.description}</small>
+                </div>
+            `;
+        }
+
+        // 基础配置管理函数
+        async function loadBasicConfig() {
+            try {
+                showStatus('正在加载基础配置...', 'loading', 'basic-status');
+                
+                const response = await fetch(`${API_BASE}/api/basic-config?_t=${Date.now()}`, {
+                    headers,
+                    cache: 'no-cache'
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const config = data.config;
+                const configItems = data.configItems;
+                
+                // 动态生成配置项HTML
+                const container = document.getElementById('dynamic-config-items');
+                container.innerHTML = configItems.map(item => {
+                    const value = config[item.key];
+                    return generateConfigItemHTML(item, value);
+                }).join('');
+                
+                // 为所有密码切换按钮添加标题提示
+                document.querySelectorAll('.password-toggle').forEach(toggle => {
+                    toggle.title = '显示密码';
+                });
+                
+                showStatus('基础配置加载成功！', 'success', 'basic-status');
+                
+            } catch (error) {
+                console.error('加载基础配置失败:', error);
+                showStatus(`加载基础配置失败: ${error.message}`, 'error', 'basic-status');
+            }
+        }
+
+        async function saveBasicConfig() {
+            try {
+                showStatus('正在保存基础配置...', 'loading', 'basic-status');
+                
+                // 动态收集所有配置项的值
+                const config = {};
+                const configInputs = document.querySelectorAll('#dynamic-config-items .config-input');
+                
+                configInputs.forEach(input => {
+                    const key = input.name;
+                    let value = input.value;
+                    
+                    // 处理布尔类型
+                    if (input.tagName === 'SELECT' && (value === 'true' || value === 'false')) {
+                        value = value === 'true';
+                    }
+                    // 处理数字类型
+                    else if (input.type === 'number') {
+                        value = parseInt(value, 10) || 0;
+                    }
+                    
+                    config[key] = value;
+                });
+
+                const response = await fetch(`${API_BASE}/api/basic-config`, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(config)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                showStatus('基础配置保存成功！需要重启服务以生效。', 'success', 'basic-status');
+                
+            } catch (error) {
+                console.error('保存基础配置失败:', error);
+                showStatus(`保存基础配置失败: ${error.message}`, 'error', 'basic-status');
+            }
+        }
+
+        async function testBasicConfig() {
+            try {
+                showStatus('正在测试配置...', 'loading', 'basic-status');
+                
+                const response = await fetch(`${API_BASE}/api/basic-config/test`, {
+                    method: 'POST',
+                    headers
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                let testResults = '<h4>🧪 配置测试结果</h4>';
+                testResults += '<div style="margin-top: 10px;">';
+                
+                if (data.results.telegram) {
+                    testResults += `<div style="margin: 5px 0;">🤖 Telegram Bot: ${data.results.telegram.success ? '✅ 连接成功' : '❌ 连接失败'}</div>`;
+                }
+                
+                if (data.results.openai) {
+                    testResults += `<div style="margin: 5px 0;">🧠 OpenAI API: ${data.results.openai.success ? '✅ 连接成功' : '❌ 连接失败'}</div>`;
+                }
+                
+                if (data.results.binance) {
+                    testResults += `<div style="margin: 5px 0;">💰 Binance API: ${data.results.binance.success ? '✅ 连接成功' : '❌ 连接失败'}</div>`;
+                }
+                
+                testResults += '</div>';
+                
+                showStatus(testResults, data.allSuccess ? 'success' : 'error', 'basic-status');
+                
+            } catch (error) {
+                console.error('测试配置失败:', error);
+                showStatus(`测试配置失败: ${error.message}`, 'error', 'basic-status');
+            }
+        }
+
+        async function restartServices() {
+            try {
+                if (!confirm('确定要重新启动服务吗？这将重新加载配置并启动机器人。')) {
+                    return;
+                }
+
+                showStatus('正在重新启动服务...', 'loading', 'basic-status');
+                
+                const response = await fetch(`${API_BASE}/api/basic-config/restart`, {
+                    method: 'POST',
+                    headers
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatus('🚀 服务重新启动成功！机器人现在应该正在运行。', 'success', 'basic-status');
+                } else {
+                    showStatus(`❌ 服务重新启动失败: ${data.message}`, 'error', 'basic-status');
+                }
+                
+            } catch (error) {
+                console.error('重新启动服务失败:', error);
+                showStatus(`重新启动服务失败: ${error.message}`, 'error', 'basic-status');
+            }
+        }
+
+        // 密码显示/隐藏切换功能
+        function togglePasswordVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            const toggle = input.parentNode.querySelector('.password-toggle');
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                toggle.textContent = '🙈'; // 猴子捂眼表情，表示隐藏
+                toggle.title = '隐藏密码';
+            } else {
+                input.type = 'password';
+                toggle.textContent = '👁️'; // 眼睛表情，表示显示
+                toggle.title = '显示密码';
+            }
+        }
+
+        // 页面加载时自动加载配置
+        window.addEventListener('load', function() {
+            loadConfig();
+            loadBasicConfig();
+            
+            // 为所有密码切换按钮添加标题提示
+            document.querySelectorAll('.password-toggle').forEach(toggle => {
+                toggle.title = '显示密码';
+            });
+        });
+    </script>
+</body>
+</html>

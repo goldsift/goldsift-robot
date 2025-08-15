@@ -47,3 +47,4 @@ coverage/
 .promptx/
 logs/
 CLAUDE.md
+data/

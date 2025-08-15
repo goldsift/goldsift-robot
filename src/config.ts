@@ -4,21 +4,16 @@
  */
 
 import { config as loadEnv } from 'dotenv';
-import type { Config, LogLevel, AIProvider } from './types.js';
+import type { Config, LogLevel } from './types.js';
+import { basicConfigManager } from './config/basic-config-manager.js';
 
 // 加载环境变量
 loadEnv();
 
-/**
- * 验证必需的环境变量
- */
-function validateRequiredEnv(key: string): string {
-  const value = process.env[key];
-  if (!value) {
-    throw new Error(`缺少必需的环境变量: ${key}`);
-  }
-  return value;
-}
+// 全局配置缓存
+let globalConfig: Config | null = null;
+
+
 
 /**
  * 验证日志级别
@@ -66,72 +61,91 @@ function validateTimezone(timezone: string): string {
   }
 }
 
-/**
- * 验证AI提供商类型
- */
-function validateAIProvider(provider: string): AIProvider {
-  const validProviders: AIProvider[] = ['openai', 'gemini', 'claude'];
-  if (!validProviders.includes(provider as AIProvider)) {
-    throw new Error(`无效的AI提供商类型: ${provider}。支持的类型: ${validProviders.join(', ')}`);
-  }
-  return provider as AIProvider;
-}
+
 
 /**
- * 创建项目配置
+ * 从数据库创建项目配置
  */
-function createConfig(): Config {
+async function createConfigFromDatabase(): Promise<Config> {
   try {
+    // 从数据库加载基础配置
+    const basicConfig = await basicConfigManager.getConfig();
+    
     return {
-      // Telegram 配置（必需）
-      telegramBotToken: validateRequiredEnv('TELEGRAM_BOT_TOKEN'),
+      // 从数据库加载的配置
+      telegramBotToken: basicConfig.telegramBotToken,
+      openaiApiKey: basicConfig.openaiApiKey,
+      openaiBaseUrl: basicConfig.openaiBaseUrl,
+      openaiModel: basicConfig.openaiModel,
+      aiProvider: basicConfig.aiProvider,
+      timezone: validateTimezone(basicConfig.timezone),
+      binanceApiKey: basicConfig.binanceApiKey,
+      binanceSecret: basicConfig.binanceSecret,
+      maxConcurrentAnalysis: validateMaxConcurrency(String(basicConfig.maxConcurrentAnalysis)),
+      enableNewMemberWelcome: basicConfig.enableNewMemberWelcome,
       
-      // OpenAI 配置（必需）
-      openaiApiKey: validateRequiredEnv('OPENAI_API_KEY'),
-      openaiBaseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
-      openaiModel: process.env.OPENAI_MODEL || 'gpt-4o',
-      
-      // AI提供商类型配置（必需）
-      aiProvider: validateAIProvider(process.env.AI_PROVIDER || 'openai'),
-      
-      // 币安配置（可选）
-      binanceApiKey: process.env.BINANCE_API_KEY,
-      binanceSecret: process.env.BINANCE_SECRET,
-      
-      // 服务配置
+      // 仍然从环境变量加载的配置
       port: validatePort(process.env.PORT || '3000'),
       nodeEnv: process.env.NODE_ENV || 'development',
-      
-      // 日志配置
-      logLevel: validateLogLevel(process.env.LOG_LEVEL || 'info'),
-      
-      // 时区配置
-      timezone: validateTimezone(process.env.TIMEZONE || 'Asia/Shanghai'),
-      
-      // 并发控制配置
-      maxConcurrentAnalysis: validateMaxConcurrency(process.env.MAX_CONCURRENT_ANALYSIS || '10'),
-      
-      // 新成员欢迎配置
-      enableNewMemberWelcome: process.env.ENABLE_NEW_MEMBER_WELCOME !== 'false'
+      logLevel: validateLogLevel(process.env.LOG_LEVEL || 'info')
     };
   } catch (error) {
-    console.error('配置验证失败:', error);
+    console.error('配置加载失败:', error);
     process.exit(1);
   }
 }
 
 /**
- * 导出全局配置实例
+ * 初始化配置
  */
-export const config = createConfig();
+async function initializeConfig(): Promise<Config> {
+  if (globalConfig) {
+    return globalConfig;
+  }
+  
+  globalConfig = await createConfigFromDatabase();
+  return globalConfig;
+}
+
+/**
+ * 获取配置实例（异步）
+ */
+export async function getConfig(): Promise<Config> {
+  return await initializeConfig();
+}
+
+/**
+ * 重新加载配置
+ */
+export async function reloadConfig(): Promise<Config> {
+  globalConfig = null;
+  const newConfig = await initializeConfig();
+  // 更新全局config对象
+  Object.assign(config, newConfig);
+  return newConfig;
+}
+
+// 为了向后兼容，保留同步导出（在应用启动时初始化）
+export let config: Config;
+
+/**
+ * 初始化同步配置（在应用启动时调用）
+ */
+export async function initializeSyncConfig(): Promise<void> {
+  config = await initializeConfig();
+}
 
 /**
  * 检查是否为开发环境
  */
-export const isDevelopment = config.nodeEnv === 'development';
+export function isDevelopment(): boolean {
+  return config?.nodeEnv === 'development';
+}
 
 /**
  * 检查是否为生产环境
  */
-export const isProduction = config.nodeEnv === 'production';
+export function isProduction(): boolean {
+  return config?.nodeEnv === 'production';
+}
 

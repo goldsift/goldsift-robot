@@ -16,8 +16,8 @@ import { analyzeStreamingTrading } from './ai.js';
 import { TradingAnalysisError, TelegramMessage } from './types.js';
 import { concurrencyManager } from './concurrency.js';
 
-// 创建 Telegram Bot 实例
-const bot = new TelegramBot(config.telegramBotToken, { polling: true });
+// Telegram Bot 实例（延迟初始化）
+let bot: any = null;
 
 // 机器人信息缓存
 let botInfo: any = null;
@@ -261,7 +261,7 @@ async function handleAnalysisError(
         errorMessage = '⏰ 请求过于频繁，请稍等片刻再试。';
         break;
       case 'CONCURRENCY_LIMIT':
-        errorMessage = '🚦 当前分析请求过多，请稍后再试。（单群限制：一次一个分析，全局限制：最多' + config.maxConcurrentAnalysis + '个并发分析）';
+        errorMessage = '🚦 当前正在分析，请稍后再试。';
         break;
       case 'OPENAI_ERROR_401':
         errorMessage = '❌ AI服务认证失败，请联系管理员。';
@@ -578,6 +578,11 @@ function initializeBotHandlers(): void {
  */
 export async function startBot(): Promise<void> {
   try {
+    // 初始化 Telegram Bot 实例
+    if (!bot) {
+      bot = new TelegramBot(config.telegramBotToken, { polling: true });
+    }
+    
     logger.info('初始化Telegram Bot', {
       botToken: config.telegramBotToken.slice(-10), // 只显示后10位
       polling: true
@@ -618,7 +623,10 @@ export async function startBot(): Promise<void> {
  */
 export async function stopBot(): Promise<void> {
   try {
-    await bot.stopPolling();
+    if (bot) {
+      await bot.stopPolling();
+      bot = null;
+    }
     logger.info('Bot已停止');
   } catch (error) {
     logger.error('Bot停止失败', {

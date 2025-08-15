@@ -23,10 +23,12 @@ Telegram消息 → AI意图识别+交易对提取 → 币安K线API → AI分析
 ## 技术栈
 
 - **Runtime**: Node.js + TypeScript
-- **Web框架**: Express.js
+- **Web框架**: 原生HTTP服务器
+- **数据库**: SQLite (better-sqlite3)
 - **Telegram集成**: node-telegram-bot-api
-- **交易所API**: binance-api-node (官方币安SDK)
+- **交易所API**: Binance REST API
 - **AI服务**: OpenAI兼容API
+- **配置管理**: Web管理界面 + SQLite存储
 - **日志**: 文件日志系统
 
 ## 项目结构
@@ -34,16 +36,26 @@ Telegram消息 → AI意图识别+交易对提取 → 币安K线API → AI分析
 ```
 robot/
 ├── src/
-│   ├── bot.ts          # Telegram Bot主逻辑
-│   ├── analyzer.ts     # AI意图识别+交易对提取  
-│   ├── binance.ts      # 币安K线数据获取
-│   ├── ai.ts           # AI交易分析
-│   ├── logger.ts       # 简单文件日志
-│   └── index.ts        # 应用入口
-├── logs/               # 日志文件目录
-├── .env               # 环境变量配置
+│   ├── config/
+│   │   ├── database-manager.ts      # SQLite数据库管理
+│   │   ├── prompt-manager-sqlite.ts # 基于SQLite的提示词管理
+│   │   └── default-prompts.json     # 默认提示词配置
+│   ├── routes/
+│   │   └── config-routes.ts         # 配置管理API路由
+│   ├── web/
+│   │   └── admin.html              # Web管理界面
+│   ├── bot.ts                      # Telegram Bot主逻辑
+│   ├── analyzer.ts                 # AI意图识别+交易对提取  
+│   ├── binance.ts                  # 币安K线数据获取
+│   ├── ai.ts                       # AI交易分析
+│   ├── logger.ts                   # 简单文件日志
+│   └── index.ts                    # 应用入口
+├── data/                           # SQLite数据库文件目录
+├── logs/                           # 日志文件目录
+├── config/                         # 运行时配置文件目录
+├── .env                           # 环境变量配置
 ├── package.json
-└── Dockerfile         # 单机部署配置
+└── Dockerfile                     # 单机部署配置
 ```
 
 ## 环境变量配置
@@ -75,6 +87,9 @@ ENABLE_NEW_MEMBER_WELCOME=true  # 是否为新用户发送欢迎消息
 
 # 时区配置
 TIMEZONE=Asia/Shanghai  # 支持全球任意IANA时区
+
+# Web管理界面配置
+ADMIN_PASSWORD=your_admin_password  # 可选，管理界面访问密码
 ```
 
 ## 安装和运行
@@ -228,6 +243,113 @@ docker stop crypto-bot && docker rm crypto-bot
 - 🎯 **优化格式**：使用Telegram Markdown格式，提升可读性
 - ⚡ **更快响应**：不再需要等待完整分析完成才看到结果
 - 📱 **更好体验**：支持消息编辑，减少聊天记录冗余
+
+### 🛠️ AI机器人配置管理 (v3.0)
+
+现在支持**双配置管理系统**！通过Web界面管理AI提示词和基础运行配置。
+
+#### 🎯 核心特性
+- **双配置管理**: 提示词配置 + 基础运行配置分离管理
+- **数据库存储**: 使用SQLite数据库存储所有配置，支持版本控制
+- **Web管理界面**: 直观的双标签页管理界面
+- **开箱即用**: 最小化环境变量依赖，大部分配置通过Web界面管理
+- **热更新**: 提示词配置修改后立即生效，基础配置重启后生效
+
+#### 📝 提示词配置管理
+- **版本控制**: 每次修改提示词都会创建新版本，支持版本间切换
+- **单表设计**: 使用SQLite数据库单表存储，通过`enabled`标记控制当前使用版本
+- **变量提示**: 界面显示可用的上下文变量，便于编写模板
+
+**管理界面功能:**
+- 💾 **保存为新版本并使用**: 创建新版本并自动设为当前使用
+- 🔄 **使用当前版本**: 重新加载当前版本到编辑器
+- 💾 **保存当前版本**: 更新当前版本（不创建新版本）
+- 🗑️ **删除当前版本**: 删除当前版本并自动切换到其他版本
+- **版本切换**: 通过下拉菜单快速切换到历史版本
+
+**可用变量:**
+- `{question}` - 用户的问题或分析需求
+- `{symbol}` - 交易对符号
+- `{timezone}` - 当前配置的时区
+- `{currentTime}` - 当前分析时间
+- `{klineData}` - 完整的多时间框架K线数据JSON
+
+#### ⚙️ 基础配置管理
+管理机器人的核心运行参数：
+- **Telegram Bot Token**: 机器人令牌
+- **OpenAI API配置**: API密钥、服务器地址、模型名称、提供商类型
+- **时区设置**: 全局时区配置
+- **币安API配置**: 可选的币安API密钥（用于获取K线数据）
+- **并发控制**: 最大并发分析数量
+- **功能开关**: 新成员欢迎消息等
+
+#### 🌐 API端点
+
+**提示词配置API:**
+- `GET /api/config/prompts` - 获取当前提示词配置
+- `POST /api/config/prompts/save-new` - 保存为新版本
+- `POST /api/config/prompts/update-current` - 更新当前版本
+- `POST /api/config/prompts/switch/{id}` - 切换到指定版本
+- `DELETE /api/config/prompts/delete-current` - 删除当前版本
+- `GET /api/config/prompts/versions` - 获取所有版本列表
+
+**基础配置API:**
+- `GET /api/basic-config` - 获取基础配置
+- `POST /api/basic-config` - 保存基础配置
+- `POST /api/basic-config/test` - 测试配置连接
+
+#### 🔐 访问控制
+管理界面和API使用Basic Auth认证：
+- 用户名: `admin`
+- 密码: 环境变量`ADMIN_PASSWORD`（默认: `admin123`）
+
+### 🚀 **部署流程**
+
+#### 1. **开箱即用部署**
+```bash
+# 克隆项目
+git clone <repo-url>
+cd robot
+
+# 安装依赖
+npm install
+
+# 启动服务（无需预先配置）
+npm start
+```
+
+#### 2. **首次配置**
+服务启动后会显示：
+```
+⚠️ 配置不完整，仅启动管理界面
+📋 缺少必要配置项：
+  1. Telegram Bot Token - 从 @BotFather 获取
+  2. OpenAI API Key - OpenAI或兼容API的密钥
+  3. 配置完成后点击重启服务按钮
+```
+
+#### 3. **完成配置**
+1. 访问 `http://localhost:3000/admin`
+2. 点击"基础配置管理"标签页
+3. 填写必要配置：
+   - **Telegram Bot Token**: 从 @BotFather 获取
+   - **OpenAI API Key**: 您的API密钥
+   - **其他可选配置**: 时区、币安API等
+4. 点击"💾 保存基础配置"
+5. 点击"🚀 重新启动服务"
+
+#### 4. **验证部署**
+配置完成后，服务将显示：
+```
+✅ 应用程序完全启动成功
+🤖 Telegram Bot 启动成功
+```
+
+### 💡 **智能启动特性**
+- **配置检查**: 自动检测必要配置是否完整
+- **优雅降级**: 配置不完整时仅启动管理界面
+- **热重载**: 配置完成后可通过管理界面重新启动服务
+- **零依赖**: 无需预先配置.env文件
 
 ## 核心特性
 

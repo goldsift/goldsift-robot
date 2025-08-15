@@ -3,7 +3,6 @@
  * 严格遵守 300 行以内规范
  */
 
-import { config } from './config.js';
 import { logger } from './logger.js';
 
 /**
@@ -12,7 +11,7 @@ import { logger } from './logger.js';
 export class TimezoneConverter {
   private readonly targetTimezone: string;
 
-  constructor(timezone: string = config.timezone) {
+  constructor(timezone: string = 'Asia/Shanghai') {
     this.targetTimezone = timezone;
   }
 
