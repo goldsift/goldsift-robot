@@ -366,10 +366,11 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
 
     // 发送数据获取中消息
     await bot.sendChatAction(chatId, 'typing');
-    let statusMessage: TelegramMessage | null = await sendSafeMessage(chatId, `📊 正在获取 *${parseResult.tradingPair}* 的市场数据...`);
+    const pairTypeText = parseResult.tradingPairType === 'futures' ? '合约' : '现货';
+    let statusMessage: TelegramMessage | null = await sendSafeMessage(chatId, `📊 正在获取 *${parseResult.tradingPair}* (${pairTypeText}) 的市场数据...`);
 
-    // 2. 获取K线数据
-    const klineData = await getKlineData(parseResult.tradingPair);
+    // 2. 获取K线数据（根据交易对类型调用对应接口）
+    const klineData = await getKlineData(parseResult.tradingPair, parseResult.tradingPairType);
 
     // 更新状态消息
     if (statusMessage) {

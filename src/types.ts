@@ -30,12 +30,17 @@ export interface TelegramMessage {
   [key: string]: any; // 其他可能的字段
 }
 
+// 交易对类型
+export type TradingPairType = 'spot' | 'futures';
+
 // 消息解析结果
 export interface MessageAnalysisResult {
   /** 是否为交易分析请求 */
   isTradeAnalysis: boolean;
   /** 提取的交易对符号 */
   tradingPair: string | null;
+  /** 交易对类型：现货或合约 */
+  tradingPairType?: TradingPairType;
   /** 识别置信度 */
   confidence?: number;
 }

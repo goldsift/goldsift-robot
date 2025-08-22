@@ -5,12 +5,14 @@
 
 import axios from 'axios';
 import { logger } from './logger.js';
-import type { TimeframeKlineData, TimeframeType, KlineData } from './types.js';
+import type { TimeframeKlineData, TimeframeType, KlineData, TradingPairType } from './types.js';
 import { TradingAnalysisError } from './types.js';
 import { formatTimestampCompact } from './timezone.js';
 
 // 币安公开API基础URL
 const BINANCE_API_BASE = 'https://api.binance.com/api/v3';
+// 币安合约API基础URL
+const BINANCE_FUTURES_API_BASE = 'https://fapi.binance.com/fapi/v1';
 
 /**
  * 支持的时间框架
@@ -50,17 +52,22 @@ function transformKlineData(rawData: any[]): KlineData[] {
 }
 
 /**
- * 获取单个时间框架的K线数据（使用币安REST API）
+ * 获取单个时间框架的K线数据（支持现货和合约）
  */
 async function getSingleTimeframeKlines(
   symbol: string,
   interval: TimeframeType,
+  tradingPairType: TradingPairType = 'spot',
   limit: number = 100
 ): Promise<KlineData[]> {
   try {
-    logger.debug(`获取K线数据`, { symbol, interval, limit });
+    logger.debug(`获取K线数据`, { symbol, interval, tradingPairType, limit });
     
-    const response = await axios.get(`${BINANCE_API_BASE}/klines`, {
+    // 根据交易对类型选择API基础URL
+    const apiBase = tradingPairType === 'futures' ? BINANCE_FUTURES_API_BASE : BINANCE_API_BASE;
+    const endpoint = tradingPairType === 'futures' ? '/klines' : '/klines';
+    
+    const response = await axios.get(`${apiBase}${endpoint}`, {
       params: {
         symbol: symbol.toUpperCase(),
         interval,
@@ -74,6 +81,7 @@ async function getSingleTimeframeKlines(
     logger.debug(`K线数据获取成功`, { 
       symbol, 
       interval, 
+      tradingPairType,
       count: transformedData.length 
     });
     
@@ -89,7 +97,7 @@ async function getSingleTimeframeKlines(
       
       if (status === 400 && data?.msg?.includes('Invalid symbol')) {
         errorCode = 'INVALID_SYMBOL';
-        errorMessage = `无效的交易对: ${symbol}`;
+        errorMessage = `无效的交易对: ${symbol} (${tradingPairType})`;
       } else if (status === 429) {
         errorCode = 'RATE_LIMIT';
         errorMessage = '请求频率限制，请稍后重试';
@@ -101,13 +109,14 @@ async function getSingleTimeframeKlines(
     logger.error(`获取K线数据失败`, {
       symbol,
       interval,
+      tradingPairType,
       error: errorMessage
     });
     
     throw new TradingAnalysisError(
       errorMessage,
       errorCode,
-      { symbol, interval }
+      { symbol, interval, tradingPairType }
     );
   }
 }
@@ -117,14 +126,15 @@ async function getSingleTimeframeKlines(
  */
 async function getMultiTimeframeKlines(
   symbol: string, 
+  tradingPairType: TradingPairType = 'spot',
   limit: number = 100
 ): Promise<TimeframeKlineData> {
-  logger.info(`开始获取多时间框架K线数据`, { symbol, limit });
+  logger.info(`开始获取多时间框架K线数据`, { symbol, tradingPairType, limit });
   
   try {
     // 并行获取所有时间框架的数据
     const promises = TIMEFRAMES.map(timeframe => 
-      getSingleTimeframeKlines(symbol, timeframe, limit)
+      getSingleTimeframeKlines(symbol, timeframe, tradingPairType, limit)
     );
     
     const results = await Promise.all(promises);
@@ -141,6 +151,7 @@ async function getMultiTimeframeKlines(
     
     logger.info(`多时间框架K线数据获取完成`, { 
       symbol,
+      tradingPairType,
       timeframes: TIMEFRAMES.length,
       totalDataPoints: Object.values(klineData).reduce((sum, data) => sum + data.length, 0)
     });
@@ -150,6 +161,7 @@ async function getMultiTimeframeKlines(
   } catch (error) {
     logger.error(`获取多时间框架K线数据失败`, {
       symbol,
+      tradingPairType,
       error: error instanceof Error ? error.message : String(error)
     });
     
@@ -182,6 +194,7 @@ async function validateSymbol(symbol: string): Promise<boolean> {
  */
 export async function getKlineData(
   symbol: string, 
+  tradingPairType: TradingPairType = 'spot',
   limit: number = 100
 ): Promise<TimeframeKlineData> {
   if (!symbol || symbol.trim().length === 0) {
@@ -195,47 +208,14 @@ export async function getKlineData(
   
   logger.info(`开始获取K线数据`, { 
     symbol: cleanSymbol, 
+    tradingPairType,
     limit
   });
 
-  return await getMultiTimeframeKlines(cleanSymbol, limit);
-}
-
-/**
- * 获取所有币安交易对信息
- */
-async function getAllTradingPairs(): Promise<string[]> {
-  try {
-    logger.debug('获取所有交易对信息');
-    
-    const response = await axios.get(`${BINANCE_API_BASE}/exchangeInfo`, {
-      timeout: 10000
-    });
-
-    const symbols = response.data.symbols
-      .filter((symbol: any) => symbol.status === 'TRADING') // 只获取正在交易的
-      .map((symbol: any) => symbol.symbol);
-
-    logger.debug('交易对信息获取成功', { 
-      totalSymbols: symbols.length 
-    });
-    
-    return symbols;
-    
-  } catch (error) {
-    logger.error('获取交易对信息失败', {
-      error: error instanceof Error ? error.message : String(error)
-    });
-    
-    throw new TradingAnalysisError(
-      '获取交易对信息失败',
-      'BINANCE_API_ERROR',
-      { error: error instanceof Error ? error.message : String(error) }
-    );
-  }
+  return await getMultiTimeframeKlines(cleanSymbol, tradingPairType, limit);
 }
 
 /**
  * 导出函数
  */
-export { validateSymbol, getAllTradingPairs };
+export { validateSymbol };

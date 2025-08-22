@@ -8,48 +8,42 @@ import { logger } from './logger.js';
 import type { MessageAnalysisResult } from './types.js';
 import { TradingAnalysisError } from './types.js';
 import { createChatCompletion, type AIMessage } from './ai-client.js';
-import { getAllTradingPairs } from './binance.js';
+import { getEnhancedTradingPairs } from './trading-pairs.js';
 
 /**
  * 构建包含交易对上下文的二次识别提示词
  */
-function buildAnalysisPromptWithContext(message: string, tradingPairs: string[]): string {
-  // 将交易对按USDT结尾的优先排序，然后分组显示
-  const usdtPairs = tradingPairs.filter(pair => pair.endsWith('USDT')).sort();
-  const otherPairs = tradingPairs.filter(pair => !pair.endsWith('USDT')).sort();
+function buildAnalysisPromptWithContext(message: string, spotPairs: string[], futuresPairs: string[]): string {
+  // 现货：只显示USDT交易对的名称和key值
+  const spotUsdtPairs = spotPairs.filter(pair => pair.endsWith('USDT')).sort();
   
-  // 为了减少token，只显示前1000个USDT交易对和前500个其他交易对
-  const displayPairs = [
-    ...usdtPairs.slice(0, 1000),
-    ...otherPairs.slice(0, 500)
-  ];
+  // 合约：显示所有USDT交易对，不包含非USDT
+  const futuresUsdtPairs = futuresPairs.filter(pair => pair.endsWith('USDT')).sort();
   
-  return `请分析用户消息，判断是否为加密货币交易分析请求，如果是则从币安交易对列表中找到最匹配的。
+  // 构建显示列表
+  const displaySpotPairs = spotUsdtPairs; // 现货只要USDT交易对
+  const displayFuturesPairs = futuresUsdtPairs; // 合约显示所有USDT交易对
 
-用户消息: "${message}"
+  // 打印上下文统计信息
+  logger.info('二次识别上下文统计', {
+    totalSpotPairs: spotPairs.length,
+    totalFuturesPairs: futuresPairs.length,
+    displaySpotPairs: displaySpotPairs.length,
+    displayFuturesPairs: displayFuturesPairs.length,
+    spotUsdtCount: spotUsdtPairs.length,
+    futuresUsdtCount: futuresUsdtPairs.length
+  });
+  
+  return `消息: "${message}"
 
-币安交易对列表（优先显示USDT交易对）:
-${displayPairs.join(', ')}
+现货USDT: ${displaySpotPairs.join(',')}
 
-请严格按照以下JSON格式返回，不要包含任何其他文字、解释或markdown格式:
-{
-  "isTradeAnalysis": true,
-  "tradingPair": "BTCUSDT"
-}
+合约USDT: ${displayFuturesPairs.join(',')}
 
-识别规则：
-1. 如果用户询问任何加密货币的价格、走势、分析、技术指标等，返回 isTradeAnalysis: true
-2. 从交易对列表中找到最匹配用户意图的交易对
-3. 优先选择USDT结尾的交易对（如BTCUSDT、ETHUSDT等）
-4. 支持中文币种名称（比特币→BTC、以太坊→ETH等）
-5. 支持模糊匹配（MATIC、Polygon→MATICUSDT）
-6. 如果找不到匹配的交易对，tradingPair 设为 null
-7. 如果不是交易分析请求，返回 isTradeAnalysis: false, tradingPair: null
+返回JSON格式:
+{"isTradeAnalysis": true, "tradingPair": "BTCUSDT", "tradingPairType": "spot"}
 
-示例：
-"分析XRP" → {"isTradeAnalysis": true, "tradingPair": "XRPUSDT"}
-"MATIC走势" → {"isTradeAnalysis": true, "tradingPair": "MATICUSDT"}
-"比特币分析" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT"}`;
+规则: tradingPairType用"spot"或"futures"`;
 }
 
 
@@ -101,9 +95,9 @@ async function callAIAPI(prompt: string): Promise<string> {
     
     const response = await createChatCompletion(messages, {
       temperature: 0.1,
-      maxTokens: 500,
-      enableThinking: true,
-      thinkingBudget: 512 // 为意图识别设置较小的思考预算
+      maxTokens: 1000, // 增加输出token限制
+      enableThinking: false, // 禁用思考模式减少token使用
+      thinkingBudget: 0
     });
 
     const content = response.content;
@@ -180,11 +174,17 @@ function parseAIResponse(aiResponse: string): MessageAnalysisResult {
       throw new Error('tradingPair 必须为字符串或 null');
     }
 
+    // 验证交易对类型（如果存在）
+    if (parsed.tradingPairType && !['spot', 'futures'].includes(parsed.tradingPairType)) {
+      throw new Error('tradingPairType 必须为 "spot" 或 "futures"');
+    }
+
     logger.debug('JSON解析成功', { parsed });
 
     return {
       isTradeAnalysis: parsed.isTradeAnalysis,
       tradingPair: parsed.tradingPair,
+      tradingPairType: parsed.tradingPairType || 'spot', // 默认为现货
       confidence: 0.9 // 默认置信度
     };
     
@@ -200,6 +200,7 @@ function parseAIResponse(aiResponse: string): MessageAnalysisResult {
     return {
       isTradeAnalysis: false,
       tradingPair: null,
+      tradingPairType: 'spot',
       confidence: 0.0
     };
   }
@@ -223,12 +224,15 @@ function validateTradingPair(pair: string | null): string | null {
 /**
  * 二次分析用户消息（使用交易对上下文）
  */
-async function analyzeMessageWithContext(message: string, tradingPairs: string[]): Promise<MessageAnalysisResult> {
+async function analyzeMessageWithContext(message: string, spotPairs: string[], futuresPairs: string[]): Promise<MessageAnalysisResult> {
   try {
-    logger.info('开始二次分析用户消息', { tradingPairsCount: tradingPairs.length });
+    logger.info('开始二次分析用户消息', { 
+      spotPairsCount: spotPairs.length, 
+      futuresPairsCount: futuresPairs.length 
+    });
     
     // 构建包含交易对上下文的提示词
-    const prompt = buildAnalysisPromptWithContext(message, tradingPairs);
+    const prompt = buildAnalysisPromptWithContext(message, spotPairs, futuresPairs);
     
     // 调用 AI 进行二次分析
     const aiResponse = await callAIAPI(prompt);
@@ -242,6 +246,7 @@ async function analyzeMessageWithContext(message: string, tradingPairs: string[]
     logger.info('二次分析完成', {
       isTradeAnalysis: result.isTradeAnalysis,
       tradingPair: result.tradingPair,
+      tradingPairType: result.tradingPairType,
       confidence: result.confidence
     });
     
@@ -256,6 +261,7 @@ async function analyzeMessageWithContext(message: string, tradingPairs: string[]
     return {
       isTradeAnalysis: true, // 假设是交易分析请求
       tradingPair: null,
+      tradingPairType: 'spot', // 默认现货
       confidence: 0.1
     };
   }
@@ -270,6 +276,7 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
     return {
       isTradeAnalysis: false,
       tradingPair: null,
+      tradingPairType: 'spot',
       confidence: 1.0
     };
   }
@@ -294,15 +301,16 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
       logger.info('第一步识别到交易分析请求但无法识别交易对，开始二次识别');
       
       try {
-        // 获取所有交易对
-        const tradingPairs = await getAllTradingPairs();
+        // 获取现货和合约交易对
+        const { spot, futures } = await getEnhancedTradingPairs();
         
         // 第二步：使用交易对上下文进行二次识别
-        const secondResult = await analyzeMessageWithContext(message, tradingPairs);
+        const secondResult = await analyzeMessageWithContext(message, spot, futures);
         
         if (secondResult.tradingPair) {
           logger.info('二次识别成功', {
             tradingPair: secondResult.tradingPair,
+            tradingPairType: secondResult.tradingPairType,
             confidence: secondResult.confidence
           });
           return secondResult;
@@ -328,6 +336,7 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
     return {
       isTradeAnalysis: false,
       tradingPair: null,
+      tradingPairType: 'spot',
       confidence: 0.0
     };
   }
