@@ -141,9 +141,10 @@ async function sendWelcomeMessage(chatId: number): Promise<void> {
 我可以帮助您分析各种加密货币交易对。
 
 📝 *使用示例：*
-• "分析一下 BTC/USDT"
-• "ETHUSDT 现在走势如何？"
-• "帮我看看 SOL 的技术指标"
+• 分析一下大饼当前的走势如何
+• 二饼各种上下插针，这波能涨上去吗
+• WLFI这个币我现在入场的话是应该卖空还是买入
+• 帮我看看SOL的技术指标
 
 ⚡ *我会自动：*
 • 识别您的分析需求
@@ -152,8 +153,7 @@ async function sendWelcomeMessage(chatId: number): Promise<void> {
 • 给出交易建议
 
 💡 支持所有币安交易对，开始提问吧！
-
-✨ *新功能*：现在支持实时分析展示，您可以看到AI分析的实时过程！`;
+`;
 
   await sendSafeMessage(chatId, welcomeText);
 }
@@ -351,7 +351,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
     if (!parseResult.isTradeAnalysis) {
       await sendSafeMessage(
         chatId,
-        '💡 我是加密货币交易分析专家。请发送包含交易对的分析请求，例如：\n\n• "分析BTC/USDT"\n• "ETHUSDT走势如何？"\n• "帮我看看SOL的技术指标"'
+        '💡 我是加密货币交易分析专家。请发送包含交易对的分析请求，例如：\n\n• "分析一下大饼当前的走势如何"\n• "WLFI币现在是涨还是跌"\n• "帮我看看SOL的技术指标"'
       );
       return;
     }
@@ -359,7 +359,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
     if (!parseResult.tradingPair) {
       await sendSafeMessage(
         chatId,
-        '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："分析BTC/USDT"'
+        '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："WLFI币现在是涨还是跌"、"AVAAI币我还能追进去吗"'
       );
       return;
     }
@@ -500,13 +500,13 @@ function initializeBotHandlers(): void {
 我是加密货币交易分析机器人，可以帮助分析各种交易对。
 
 📝 *在群聊中使用方法：*
-• @我 分析 BTC/USDT
-• @我 ETHUSDT 现在走势如何？
-• 回复我的消息进行对话
+• @我 分析一下大饼当前的走势如何
+• @我 二饼各种上下插针，这波能涨上去吗
+• @我 WLFI这个币我现在入场的话是应该卖空还是买入
+• @我 帮我看看SOL的技术指标
 
 ⚡ *并发控制：*
-• 每个群同时只能进行一个分析
-• 全局最多支持 ${config.maxConcurrentAnalysis} 个并发分析
+• 群内同时只能进行一个交易对分析
 • 私聊和群聊分析互不影响
 
 💡 支持所有币安交易对，@我开始分析吧！`;
@@ -539,20 +539,19 @@ function initializeBotHandlers(): void {
 
 我是群里的加密货币交易分析机器人 🤖，可以为大家提供专业的交易分析服务。
 
-📊 *如何使用我：*
-• @我 分析 BTC/USDT
-• @我 ETHUSDT 走势如何？
-• @我 帮我看看 SOL 的技术指标
-• 回复我的任何消息进行进一步对话
+📊 *如何使用我：@我正常提问，我会自动识别加密货币相关问题并给予回答，常用的货币我可以直接识别名称、外号，山寨币需要提供完整的货币名，例如：*
+• @我 分析一下大饼当前的走势如何
+• @我 二饼各种上下插针，这波能涨上去吗
+• @我 WLFI这个币我现在入场的话是应该卖空还是买入
+• @我 帮我看看SOL的技术指标
 
 ⚡ *使用规则：*
+• 只回答加密货币相关问题，一次只能分析一个交易对
 • 每个群同时只能进行一个分析（避免刷屏）
 • 支持所有币安交易对
-• 提供多时间框架技术分析
-• 实时流式分析展示
 
-💡 *使用提示：*
-直接@我并说出你想分析的交易对即可，我会自动识别并提供专业分析！
+💡 *使用技巧：*
+• 默认我会取这个交易对的现货数据进行分析，如果没有现货的话我会设法获取合约数据。如果你有特定的要求，可以明确告诉我分析那种交易对，例如：@我 看一下WLFI币现在是个什么情况，注意我要合约数据
 
 🚀 开始体验吧，@我试试看！`;
           

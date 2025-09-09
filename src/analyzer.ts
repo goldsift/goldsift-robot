@@ -3,9 +3,10 @@
  * 严格遵守 300 行以内规范
  */
 
+import axios from 'axios';
 import { config } from './config.js';
 import { logger } from './logger.js';
-import type { MessageAnalysisResult } from './types.js';
+import type { MessageAnalysisResult, TradingPairType } from './types.js';
 import { TradingAnalysisError } from './types.js';
 import { createChatCompletion, type AIMessage } from './ai-client.js';
 import { getEnhancedTradingPairs } from './trading-pairs.js';
@@ -34,16 +35,18 @@ function buildAnalysisPromptWithContext(message: string, spotPairs: string[], fu
     futuresUsdtCount: futuresUsdtPairs.length
   });
   
-  return `消息: "${message}"
+  return `请分析用户消息，并提取交易对: 用户消息"${message}"
 
+****下面提供完整的现货和合约交易对名称，请从中选择最匹配的交易对，优先匹配现货，如果现货没有则匹配合约****
 现货USDT: ${displaySpotPairs.join(',')}
-
 合约USDT: ${displayFuturesPairs.join(',')}
 
-返回JSON格式:
-{"isTradeAnalysis": true, "tradingPair": "BTCUSDT", "tradingPairType": "spot"}
 
-规则: tradingPairType用"spot"或"futures"`;
+****请严格按照以下JSON格式返回，不要包含任何其他文字、解释或markdown格式::****
+{"isTradeAnalysis": true, "tradingPair": "BTCUSDT", "tradingPairType": "spot"}
+规则: tradingPairType用"spot"或"futures"
+
+`;
 }
 
 
@@ -59,25 +62,27 @@ function buildAnalysisPrompt(message: string): string {
 请严格按照以下JSON格式返回，不要包含任何其他文字、解释或markdown格式:
 {
   "isTradeAnalysis": true,
-  "tradingPair": "BTCUSDT"
+  "tradingPair": "BTCUSDT",
+  "tradingPairType": "spot"
 }
 
 识别规则：
 1. 如果用户询问任何加密货币的价格、走势、分析、技术指标等，返回 isTradeAnalysis: true
 2. 分析方法不是关键字：缠论、威科夫、江恩等只是分析方法，重点是识别币种
-3. 交易对格式统一为币安格式，如 BTCUSDT、ETHUSDT、SOLUSDT  
-4. 常见币种映射：
+3. 需要区分是合约还是现货，如果用户明确要查询合约则返回 tradingPairType: "futures"，否则默认返回现货 tradingPairType: "spot"
+4. 交易对格式统一为币安格式，如 BTCUSDT、ETHUSDT、SOLUSDT  
+5. 常见币种映射：
    - 比特币/BTC → BTCUSDT
    - 以太坊/ETH → ETHUSDT  
    - 狗狗币/DOGE → DOGEUSDT
    - 索拉纳/SOL → SOLUSDT
-5. 如果无法识别具体交易对，tradingPair 设为 null
-6. 如果不是交易分析请求，返回 isTradeAnalysis: false, tradingPair: null
+6. 如果无法识别具体交易对，tradingPair 设为 null
+7. 如果不是交易分析请求，返回 isTradeAnalysis: false, tradingPair: null
 
 示例：
-"分析比特币" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT"}
-"使用缠论分析比特币" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT"}
-"BTC走势如何" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT"}
+"分析比特币" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT","tradingPairType": "spot"}
+"使用缠论分析比特币" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT","tradingPairType": "spot"}
+"BTC合约走势如何" → {"isTradeAnalysis": true, "tradingPair": "BTCUSDT","tradingPairType": "futures"}
 "今天天气如何" → {"isTradeAnalysis": false, "tradingPair": null}`;
 }
 
@@ -96,8 +101,8 @@ async function callAIAPI(prompt: string): Promise<string> {
     const response = await createChatCompletion(messages, {
       temperature: 0.1,
       maxTokens: 1000, // 增加输出token限制
-      enableThinking: false, // 禁用思考模式减少token使用
-      thinkingBudget: 0
+      enableThinking: true,
+      thinkingBudget: -1 // 启用动态思考
     });
 
     const content = response.content;
@@ -207,18 +212,94 @@ function parseAIResponse(aiResponse: string): MessageAnalysisResult {
 }
 
 /**
- * 验证交易对格式
+ * 通过API验证交易对真实性（轻量级快速验证）
  */
-function validateTradingPair(pair: string | null): string | null {
-  if (!pair) return null;
-  
-  // 基本格式验证：3-10个字母的组合
-  const pairRegex = /^[A-Z]{3,10}[A-Z]{3,10}$/;
-  if (!pairRegex.test(pair)) {
-    logger.warn('交易对格式可能不正确', { pair });
+async function validateTradingPairByAPI(pair: string | null, tradingPairType: TradingPairType = 'spot'): Promise<{ 
+  isValid: boolean; 
+  validatedPair: string | null; 
+  finalTradingPairType: TradingPairType 
+}> {
+  if (!pair) {
+    return { isValid: false, validatedPair: null, finalTradingPairType: tradingPairType };
   }
   
-  return pair.toUpperCase();
+  const cleanPair = pair.trim().toUpperCase();
+  
+  try {
+    // 根据交易对类型选择API端点
+    const apiBase = tradingPairType === 'futures' 
+      ? 'https://fapi.binance.com/fapi/v1' 
+      : 'https://api.binance.com/api/v3';
+    
+    logger.debug('开始API验证交易对', { 
+      pair: cleanPair, 
+      tradingPairType,
+      apiBase 
+    });
+    
+    // 只获取1条最新K线数据，最小化数据传输
+    await axios.get(`${apiBase}/klines`, {
+      params: {
+        symbol: cleanPair,
+        interval: '1h', // 使用1小时间隔，数据量小
+        limit: 1        // 只要1条数据
+      },
+      timeout: 3000     // 3秒超时，确保速度
+    });
+    
+    logger.debug('API验证成功', { pair: cleanPair, tradingPairType });
+    return { isValid: true, validatedPair: cleanPair, finalTradingPairType: tradingPairType };
+    
+  } catch (error: any) {
+    logger.debug('主要类型API验证失败，尝试另一种类型', { 
+      pair: cleanPair, 
+      originalType: tradingPairType,
+      error: error.response?.status || error.message
+    });
+    
+    // 尝试另一种类型的验证
+    const fallbackType: TradingPairType = tradingPairType === 'spot' ? 'futures' : 'spot';
+    const fallbackApiBase = fallbackType === 'futures' 
+      ? 'https://fapi.binance.com/fapi/v1' 
+      : 'https://api.binance.com/api/v3';
+    
+    try {
+      await axios.get(`${fallbackApiBase}/klines`, {
+        params: {
+          symbol: cleanPair,
+          interval: '1h',
+          limit: 1
+        },
+        timeout: 3000
+      });
+      
+      logger.debug('回退验证成功，更新交易对类型', { 
+        pair: cleanPair, 
+        originalType: tradingPairType,
+        correctedType: fallbackType
+      });
+      
+      return { 
+        isValid: true, 
+        validatedPair: cleanPair, 
+        finalTradingPairType: fallbackType  // 返回实际验证成功的类型
+      };
+      
+    } catch (fallbackError: any) {
+      logger.debug('回退验证也失败', { 
+        pair: cleanPair, 
+        fallbackType,
+        error: fallbackError.response?.status || fallbackError.message 
+      });
+    }
+    
+    logger.debug('所有验证都失败', { 
+      pair: cleanPair, 
+      attemptedTypes: [tradingPairType, fallbackType]
+    });
+    
+    return { isValid: false, validatedPair: null, finalTradingPairType: tradingPairType };
+  }
 }
 
 /**
@@ -239,9 +320,6 @@ async function analyzeMessageWithContext(message: string, spotPairs: string[], f
     
     // 解析 AI 响应
     const result = parseAIResponse(aiResponse);
-    
-    // 验证交易对格式
-    result.tradingPair = validateTradingPair(result.tradingPair);
     
     logger.info('二次分析完成', {
       isTradeAnalysis: result.isTradeAnalysis,
@@ -288,7 +366,6 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
     const prompt = buildAnalysisPrompt(message);
     const aiResponse = await callAIAPI(prompt);
     const result = parseAIResponse(aiResponse);
-    result.tradingPair = validateTradingPair(result.tradingPair);
     
     logger.info('第一步分析完成', {
       isTradeAnalysis: result.isTradeAnalysis,
@@ -296,8 +373,41 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
       confidence: result.confidence
     });
     
+    // 检查是否需要API验证和可能的二次识别
+    let needsSecondAnalysis = false;
+    
+    if (result.isTradeAnalysis && result.tradingPair) {
+      // 如果识别到交易对，进行API验证
+      logger.info('开始API验证交易对', { 
+        tradingPair: result.tradingPair, 
+        tradingPairType: result.tradingPairType 
+      });
+      const validation = await validateTradingPairByAPI(result.tradingPair, result.tradingPairType);
+      
+      if (validation.isValid) {
+        logger.info('API验证成功，交易对有效', { 
+          originalPair: result.tradingPair,
+          validatedPair: validation.validatedPair,
+          originalType: result.tradingPairType,
+          finalType: validation.finalTradingPairType
+        });
+        result.tradingPair = validation.validatedPair;
+        result.tradingPairType = validation.finalTradingPairType; // 更新为实际验证成功的类型
+        return result; // 验证成功，直接返回
+      } else {
+        logger.info('API验证失败，交易对无效，需要二次识别', { 
+          invalidPair: result.tradingPair,
+          attemptedType: result.tradingPairType
+        });
+        needsSecondAnalysis = true;
+      }
+    } else if (result.isTradeAnalysis && result.tradingPair === null) {
+      logger.info('第一步未识别到交易对，需要二次识别');
+      needsSecondAnalysis = true;
+    }
+    
     // 检查是否需要二次识别
-    if (result.isTradeAnalysis && result.tradingPair === null) {
+    if (needsSecondAnalysis) {
       logger.info('第一步识别到交易分析请求但无法识别交易对，开始二次识别');
       
       try {
@@ -308,12 +418,29 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
         const secondResult = await analyzeMessageWithContext(message, spot, futures);
         
         if (secondResult.tradingPair) {
-          logger.info('二次识别成功', {
+          // 对二次识别结果也进行API验证
+          logger.info('对二次识别结果进行API验证', { 
             tradingPair: secondResult.tradingPair,
-            tradingPairType: secondResult.tradingPairType,
-            confidence: secondResult.confidence
+            tradingPairType: secondResult.tradingPairType
           });
-          return secondResult;
+          const secondValidation = await validateTradingPairByAPI(secondResult.tradingPair, secondResult.tradingPairType);
+          
+          if (secondValidation.isValid) {
+            logger.info('二次识别API验证成功', {
+              originalPair: secondResult.tradingPair,
+              validatedPair: secondValidation.validatedPair,
+              originalType: secondResult.tradingPairType,
+              finalType: secondValidation.finalTradingPairType
+            });
+            secondResult.tradingPair = secondValidation.validatedPair;
+            secondResult.tradingPairType = secondValidation.finalTradingPairType; // 更新为实际验证成功的类型
+            return secondResult;
+          } else {
+            logger.warn('二次识别的交易对API验证失败', { 
+              invalidPair: secondResult.tradingPair,
+              attemptedType: secondResult.tradingPairType
+            });
+          }
         } else {
           logger.info('二次识别仍未找到匹配的交易对');
         }
