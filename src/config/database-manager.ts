@@ -87,17 +87,46 @@ export class DatabaseManager {
       )
     `;
 
+    // 创建审计日志表
+    const createAuditLogTable = `
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        telegram_user_id INTEGER NOT NULL,
+        telegram_username TEXT,
+        telegram_display_name TEXT,
+        chat_id INTEGER NOT NULL,
+        chat_type TEXT NOT NULL CHECK(chat_type IN ('private', 'group', 'supergroup')),
+        source_type TEXT NOT NULL CHECK(source_type IN ('private_chat', 'group_mention', 'group_reply')),
+        question_text TEXT NOT NULL,
+        identified_currency TEXT,
+        currency_type TEXT CHECK(currency_type IN ('spot', 'futures')),
+        result_status TEXT NOT NULL CHECK(result_status IN ('success', 'currency_not_identified', 'ai_error', 'other_error')),
+        error_message TEXT,
+        response_length INTEGER,
+        processing_time_ms INTEGER,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     // 创建索引
     const createIndexes = [
       'CREATE INDEX IF NOT EXISTS idx_enabled ON prompt_configs (enabled)',
       'CREATE INDEX IF NOT EXISTS idx_created_at ON prompt_configs (created_at DESC)',
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_enabled_unique ON prompt_configs (enabled) WHERE enabled = TRUE',
-      'CREATE INDEX IF NOT EXISTS idx_basic_config_key ON basic_configs (config_key)'
+      'CREATE INDEX IF NOT EXISTS idx_basic_config_key ON basic_configs (config_key)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs (timestamp DESC)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_user_id ON audit_logs (telegram_user_id)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_chat_id ON audit_logs (chat_id)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_result_status ON audit_logs (result_status)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_currency ON audit_logs (identified_currency)',
+      'CREATE INDEX IF NOT EXISTS idx_audit_created_at ON audit_logs (created_at DESC)'
     ];
 
     try {
       this.db.exec(createConfigTable);
       this.db.exec(createBasicConfigTable);
+      this.db.exec(createAuditLogTable);
       
       createIndexes.forEach(indexSql => {
         this.db!.exec(indexSql);
@@ -167,10 +196,12 @@ export class DatabaseManager {
 
     const totalCount = this.db.prepare('SELECT COUNT(*) as count FROM prompt_configs').get() as { count: number };
     const enabledCount = this.db.prepare('SELECT COUNT(*) as count FROM prompt_configs WHERE enabled = TRUE').get() as { count: number };
+    const auditCount = this.db.prepare('SELECT COUNT(*) as count FROM audit_logs').get() as { count: number };
     
     return {
       totalConfigs: totalCount.count,
       enabledConfigs: enabledCount.count,
+      totalAuditLogs: auditCount.count,
       dbSize: this.db.prepare("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()").get(),
       journalMode: this.db.pragma('journal_mode', { simple: true })
     };

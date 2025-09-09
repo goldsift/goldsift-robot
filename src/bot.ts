@@ -15,6 +15,7 @@ import { getKlineData } from './binance.js';
 import { analyzeStreamingTrading } from './ai.js';
 import { TradingAnalysisError, TelegramMessage } from './types.js';
 import { concurrencyManager } from './concurrency.js';
+import { auditLogger } from './audit-logger.js';
 
 // Telegram Bot 实例（延迟初始化）
 let bot: any = null;
@@ -288,6 +289,7 @@ async function handleAnalysisError(
 async function handleTextMessage(msg: TelegramMessage): Promise<void> {
   const chatId = msg.chat.id;
   const originalText = msg.text;
+  const startTime = auditLogger.startTiming(); // 开始计时
 
   if (!originalText) {
     await sendSafeMessage(chatId, '❌ 请发送文本消息。');
@@ -312,6 +314,17 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
     return;
   }
 
+  // 准备审计日志基础信息
+  const baseAuditParams = {
+    telegramUserId: msg.from?.id || 0,
+    telegramUsername: msg.from?.username || undefined,
+    telegramDisplayName: msg.from ? auditLogger.generateDisplayName(msg.from) : undefined,
+    chatId,
+    chatType: msg.chat.type as 'private' | 'group' | 'supergroup',
+    sourceType: auditLogger.determineSourceType(msg),
+    questionText: messageText
+  };
+
   logger.info('收到用户消息', {
     chatId,
     chatType: msg.chat.type,
@@ -331,6 +344,14 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
       isGroupBusy: concurrencyManager.groupAnalysis.get(chatId) === true
     });
     
+    // 记录并发限制错误的审计日志
+    await auditLogger.log({
+      ...baseAuditParams,
+      resultStatus: 'other_error',
+      errorMessage: '并发限制 - 分析请求过多',
+      processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+    });
+    
     await handleAnalysisError(chatId, new TradingAnalysisError(
       '当前分析请求过多，请稍后再试',
       'CONCURRENCY_LIMIT'
@@ -348,7 +369,31 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
     // 1. AI意图识别和交易对提取
     const parseResult = await analyzeMessage(messageText);
 
+    // 检查是否是AI调用错误
+    if (parseResult.hasAIError) {
+      await auditLogger.log({
+        ...baseAuditParams,
+        resultStatus: 'ai_error',
+        errorMessage: parseResult.errorMessage || 'AI服务调用失败',
+        processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+      });
+      
+      await sendSafeMessage(
+        chatId,
+        '❌ AI服务出问题啦，请稍后再试或联系管理员处理。'
+      );
+      return;
+    }
+
+    // 检查是否为交易分析请求
     if (!parseResult.isTradeAnalysis) {
+      await auditLogger.log({
+        ...baseAuditParams,
+        resultStatus: 'other_error',
+        errorMessage: '非交易分析请求',
+        processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+      });
+      
       await sendSafeMessage(
         chatId,
         '💡 我是加密货币交易分析专家。请发送包含交易对的分析请求，例如：\n\n• "分析一下大饼当前的走势如何"\n• "WLFI币现在是涨还是跌"\n• "帮我看看SOL的技术指标"'
@@ -356,11 +401,35 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
       return;
     }
 
+    // 检查是否识别到交易对
     if (!parseResult.tradingPair) {
-      await sendSafeMessage(
-        chatId,
-        '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："WLFI币现在是涨还是跌"、"AVAAI币我还能追进去吗"'
-      );
+      if (parseResult.hasAIError) {
+        // 如果是因为AI错误导致无法识别交易对
+        await auditLogger.log({
+          ...baseAuditParams,
+          resultStatus: 'ai_error',
+          errorMessage: 'AI错误导致无法识别交易对',
+          processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+        });
+        
+        await sendSafeMessage(
+          chatId,
+          '❌ AI服务出问题啦，请稍后再试或联系管理员处理。'
+        );
+      } else {
+        // 正常情况下无法识别交易对
+        await auditLogger.log({
+          ...baseAuditParams,
+          resultStatus: 'currency_not_identified',
+          errorMessage: '未能识别到具体的交易对',
+          processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+        });
+        
+        await sendSafeMessage(
+          chatId,
+          '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："WLFI币现在是涨还是跌"、"AVAAI币我还能追进去吗"'
+        );
+      }
       return;
     }
 
@@ -416,6 +485,16 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
       }
     );
 
+    // 记录成功的审计日志
+    await auditLogger.log({
+      ...baseAuditParams,
+      identifiedCurrency: parseResult.tradingPair,
+      currencyType: parseResult.tradingPairType,
+      resultStatus: 'success',
+      responseLength: fullContent.length,
+      processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+    });
+
     logger.info('流式分析完成', {
       chatId,
       tradingPair: parseResult.tradingPair,
@@ -423,6 +502,14 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
     });
 
   } catch (error) {
+    // 记录错误的审计日志
+    await auditLogger.log({
+      ...baseAuditParams,
+      resultStatus: 'other_error',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      processingTimeMs: auditLogger.calculateProcessingTime(startTime)
+    });
+    
     await handleAnalysisError(chatId, error, '消息');
   } finally {
     // 完成分析（减少并发计数）

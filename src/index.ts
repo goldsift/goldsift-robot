@@ -11,6 +11,7 @@ import { parse } from 'url';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { handleConfigRoutes } from './routes/config-routes.js';
+import { handleDashboardRoutes } from './routes/dashboard-routes.js';
 
 // 全局变量存储HTTP服务器实例
 let httpServer: any = null;
@@ -56,6 +57,11 @@ function startHttpServer(): Promise<void> {
           return;
         }
 
+        // Dashboard API路由
+        if (await handleDashboardRoutes(req, res, pathname)) {
+          return;
+        }
+
         // 404 处理
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Not Found' }));
@@ -79,6 +85,7 @@ function startHttpServer(): Promise<void> {
         healthEndpoint: `/health`,
         adminInterface: `/admin`,
         configApi: `/api/config/prompts`,
+        dashboardApi: `/api/dashboard/stats`,
         externalAccess: config.host === '0.0.0.0' ? '支持外部访问' : '仅本地访问'
       });
       resolve();

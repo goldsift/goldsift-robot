@@ -200,13 +200,15 @@ function parseAIResponse(aiResponse: string): MessageAnalysisResult {
       responseLength: aiResponse.length
     });
     
-    // 如果解析失败，返回默认值而不是抛出异常
-    logger.warn('解析失败，返回默认响应');
+    // 如果解析失败，返回AI错误标识
+    logger.warn('AI响应解析失败，返回错误响应');
     return {
       isTradeAnalysis: false,
       tradingPair: null,
       tradingPairType: 'spot',
-      confidence: 0.0
+      confidence: 0.0,
+      hasAIError: true,
+      errorMessage: 'AI响应格式解析失败'
     };
   }
 }
@@ -335,12 +337,14 @@ async function analyzeMessageWithContext(message: string, spotPairs: string[], f
       error: error instanceof Error ? error.message : String(error)
     });
     
-    // 二次分析失败时返回原始结果
+    // 二次分析失败时返回AI错误标识
     return {
       isTradeAnalysis: true, // 假设是交易分析请求
       tradingPair: null,
       tradingPairType: 'spot', // 默认现货
-      confidence: 0.1
+      confidence: 0.1,
+      hasAIError: true,
+      errorMessage: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -355,7 +359,8 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
       isTradeAnalysis: false,
       tradingPair: null,
       tradingPairType: 'spot',
-      confidence: 1.0
+      confidence: 1.0,
+      hasAIError: false
     };
   }
 
@@ -459,12 +464,14 @@ export async function analyzeMessage(message: string): Promise<MessageAnalysisRe
       error: error instanceof Error ? error.message : String(error)
     });
     
-    // 分析失败时的默认返回
+    // 分析失败时返回AI调用错误标识
     return {
       isTradeAnalysis: false,
       tradingPair: null,
       tradingPairType: 'spot',
-      confidence: 0.0
+      confidence: 0.0,
+      hasAIError: true,
+      errorMessage: error instanceof Error ? error.message : String(error)
     };
   }
 }
