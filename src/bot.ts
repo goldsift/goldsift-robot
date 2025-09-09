@@ -348,6 +348,16 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
     // 1. AI意图识别和交易对提取
     const parseResult = await analyzeMessage(messageText);
 
+    // 检查是否是AI调用错误
+    if (parseResult.hasAIError) {
+      await sendSafeMessage(
+        chatId,
+        '❌ AI服务出问题啦，请稍后再试或联系管理员处理。'
+      );
+      return;
+    }
+
+    // 检查是否为交易分析请求
     if (!parseResult.isTradeAnalysis) {
       await sendSafeMessage(
         chatId,
@@ -356,11 +366,21 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
       return;
     }
 
+    // 检查是否识别到交易对
     if (!parseResult.tradingPair) {
-      await sendSafeMessage(
-        chatId,
-        '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："WLFI币现在是涨还是跌"、"AVAAI币我还能追进去吗"'
-      );
+      if (parseResult.hasAIError) {
+        // 如果是因为AI错误导致无法识别交易对
+        await sendSafeMessage(
+          chatId,
+          '❌ AI服务出问题啦，请稍后再试或联系管理员处理。'
+        );
+      } else {
+        // 正常情况下无法识别交易对
+        await sendSafeMessage(
+          chatId,
+          '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："WLFI币现在是涨还是跌"、"AVAAI币我还能追进去吗"'
+        );
+      }
       return;
     }
 

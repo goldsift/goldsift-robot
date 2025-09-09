@@ -43,6 +43,10 @@ export interface MessageAnalysisResult {
   tradingPairType?: TradingPairType;
   /** 识别置信度 */
   confidence?: number;
+  /** 是否发生了AI调用错误 */
+  hasAIError?: boolean;
+  /** 错误信息（如果有的话） */
+  errorMessage?: string;
 }
 
 // K线数据结构
