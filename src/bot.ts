@@ -351,7 +351,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
       errorMessage: '并发限制 - 分析请求过多',
       processingTimeMs: auditLogger.calculateProcessingTime(startTime)
     });
-    
+
     await handleAnalysisError(chatId, new TradingAnalysisError(
       '当前分析请求过多，请稍后再试',
       'CONCURRENCY_LIMIT'
@@ -377,7 +377,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
         errorMessage: parseResult.errorMessage || 'AI服务调用失败',
         processingTimeMs: auditLogger.calculateProcessingTime(startTime)
       });
-      
+
       await sendSafeMessage(
         chatId,
         '❌ AI服务出问题啦，请稍后再试或联系管理员处理。'
@@ -393,7 +393,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
         errorMessage: '非交易分析请求',
         processingTimeMs: auditLogger.calculateProcessingTime(startTime)
       });
-      
+
       await sendSafeMessage(
         chatId,
         '💡 我是加密货币交易分析专家。请发送包含交易对的分析请求，例如：\n\n• "分析一下大饼当前的走势如何"\n• "WLFI币现在是涨还是跌"\n• "帮我看看SOL的技术指标"'
@@ -411,7 +411,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
           errorMessage: 'AI错误导致无法识别交易对',
           processingTimeMs: auditLogger.calculateProcessingTime(startTime)
         });
-        
+
         await sendSafeMessage(
           chatId,
           '❌ AI服务出问题啦，请稍后再试或联系管理员处理。'
@@ -424,7 +424,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
           errorMessage: '未能识别到具体的交易对',
           processingTimeMs: auditLogger.calculateProcessingTime(startTime)
         });
-        
+
         await sendSafeMessage(
           chatId,
           '❓ 未能识别到具体的交易对，请明确指定要分析的币种，例如："WLFI币现在是涨还是跌"、"AVAAI币我还能追进去吗"'
@@ -509,7 +509,7 @@ async function handleTextMessage(msg: TelegramMessage): Promise<void> {
       errorMessage: error instanceof Error ? error.message : String(error),
       processingTimeMs: auditLogger.calculateProcessingTime(startTime)
     });
-    
+
     await handleAnalysisError(chatId, error, '消息');
   } finally {
     // 完成分析（减少并发计数）
